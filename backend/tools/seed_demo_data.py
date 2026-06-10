@@ -39,13 +39,18 @@ LOGS   = DATA / "logs"
 # Project keys come from config.env PROJECTS — the seeder generates demo data
 # for whatever projects the app is configured with.
 sys.path.insert(0, str(ROOT))
-from config import PROJECTS  # noqa: E402
+from config import PROJECTS, SYNC_START_DATE  # noqa: E402
 
 rng = random.Random(42)
 
 NOW         = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
-START_YEAR  = 2024
-START_MONTH = datetime(START_YEAR, 1, 1, tzinfo=timezone.utc)
+
+# Generate history from the configured sync window start — the pipeline only
+# discovers issues created >= SYNC_START_DATE, so anything seeded before that
+# (including epics, whose created date is the min of their children) would be
+# invisible to a sync against the mock server.
+START_MONTH = datetime.fromisoformat(SYNC_START_DATE).replace(tzinfo=timezone.utc)
+START_YEAR  = START_MONTH.year
 
 # ── Squad profiles: distinct throughput / quality so charts differ per squad ──
 # Canned profile/team pools are assigned to the configured projects in order,
