@@ -20,7 +20,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
+import mirror
 from config import TOOLS, ALLOWED_ORIGINS, JIRA_URL, AUTH_USER, AUTH_PASSWORD
+from tools.sync.router import router as sync_router
 
 app = FastAPI(title="Cadence")
 
@@ -77,17 +79,26 @@ def api_config():
 
 @app.get("/api/tools")
 def api_tools():
-    """Homepage tools in registry order."""
-    return {"tools": TOOLS}
+    """Homepage tools (registry order) plus the sync state. Every tool except
+    Sync Now works off the synced mirror, so the homepage disables them and
+    shows an alert until the first sync completes."""
+    return {
+        "tools": TOOLS,
+        "sync": {"synced": mirror.is_synced(), "last_sync": mirror.last_sync()},
+    }
 
 
 @app.get("/api/accessible-tools")
 def api_accessible_tools():
-    """Navigable tools for the frontend route guard."""
-    return TOOLS
+    """Navigable tools for the frontend route guard. Until the first sync,
+    only Sync Now is navigable — everything else reads the synced mirror."""
+    if mirror.is_synced():
+        return TOOLS
+    return [t for t in TOOLS if t["id"] == "sync"]
 
 
 # ── API routers ─────────────────────────────────────────────────────────────────
+app.include_router(sync_router,  prefix="/sync")
 
 # ── Frontend (SPA) — served after `npm run build` ──────────────────────────────
 _DIST = os.path.join(os.path.dirname(__file__), "..", "frontend", "dist")
