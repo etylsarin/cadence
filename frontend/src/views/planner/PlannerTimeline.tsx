@@ -4,14 +4,14 @@ import {
 } from 'react'
 import { createPortal } from 'react-dom'
 import {
-  CalendarRange, Rows3, Columns3, ChevronsRightLeft, ChevronsLeft, ChevronsRight,
+  CalendarRange, ChevronsLeft, ChevronsRight,
   Trash2, MapPin, FlagTriangleRight, FlagTriangleLeft, CalendarDays, GripVertical,
 } from 'lucide-react'
 import AppInfoPanel from '@/components/AppInfoPanel'
 import AppTooltip from '@/components/AppTooltip'
 import { PROJ_COLORS } from '@/lib/tags'
 import { formatDate, shortDate, dailyThroughput, countWorkdays, ymd, type SimResult, type PlanRow } from './simulate'
-import type { TeamConfig, ScenarioOn, ReorderChange } from './types'
+import type { TeamConfig, ReorderChange } from './types'
 import './planner.css'
 
 // ── Geometry constants ─────────────────────────────────────────────────────────
@@ -24,8 +24,6 @@ const NONAUTO_LEFT_PAD_WD = 2
 const SPAN_LABEL_MARGIN = 6
 const FINE_GRID_MIN_PX = 6
 
-const EXCLUDE_TYPES = ['Story', 'Bug', 'Task', 'Spike']
-const DROP_TIERS = ['Low', 'Medium', 'High']   // Critical is never droppable
 
 type Scale = 'auto' | 'month' | 'quarter' | 'year'
 
@@ -145,18 +143,6 @@ function barPriorityCls(level: string | null): string {
           : 'bg-gray-100 text-gray-500'
 }
 
-function deltaClass(delta: number): string {
-  return delta < 0 ? 'text-emerald-600 dark:text-emerald-400'
-    : delta > 0 ? 'text-amber-600 dark:text-amber-400'
-      : 'text-gray-500'
-}
-
-function layoutBtnClass(active: boolean): string {
-  return active
-    ? 'border-blue-300 dark:border-blue-700 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 font-medium'
-    : 'border-gray-200 dark:border-slate-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-slate-800'
-}
-
 interface DragState {
   epicId: string
   laneKey: string
@@ -195,21 +181,17 @@ interface Props {
   team: TeamConfig
   startDate: string
   baseline: SimResult | null
-  scenario: SimResult | null
   previewBaseline: SimResult | null
-  scenarioOn: ScenarioOn
-  onScenarioOnChange: (s: ScenarioOn) => void
   onStartDateChange: (v: string) => void
   onDragPreview: (change: ReorderChange | null) => void
   onReorder: (change: ReorderChange) => void
   onRemove: (epicKey: string) => void
-  onLayout: (kind: 'split' | 'sequential' | 'tighten') => void
 }
 
 export default function PlannerTimeline({
-  squad, team, startDate, baseline, scenario, previewBaseline, scenarioOn,
-  onScenarioOnChange, onStartDateChange,
-  onDragPreview, onReorder, onRemove, onLayout,
+  squad, team, startDate, baseline, previewBaseline,
+  onStartDateChange,
+  onDragPreview, onReorder, onRemove,
 }: Props) {
   const [scale, setScale] = useState<Scale>('auto')
   const [containerWidth, setContainerWidth] = useState(0)
@@ -229,21 +211,6 @@ export default function PlannerTimeline({
   const startHandleRef = useRef<StartHandleDrag | null>(null)
   const [startHandleDrag, _setStartHandleDrag] = useState<StartHandleDrag | null>(null)
   const setStartHandle = useCallback((s: StartHandleDrag | null) => { startHandleRef.current = s; _setStartHandleDrag(s ? { ...s } : null) }, [])
-
-  // ── Scenario / team setters ─────────────────────────────────────────────────
-  const setScen = (key: keyof ScenarioOn, value: unknown) => onScenarioOnChange({ ...scenarioOn, [key]: value } as ScenarioOn)
-  const resetScenario = () => onScenarioOnChange({ extraCapacityPct: 0, excludeTypes: [], dropPriorities: [] })
-
-  const isExcluded = (type: string) => (scenarioOn.excludeTypes || []).includes(type)
-  const toggleExcludeType = (type: string) => {
-    const cur = scenarioOn.excludeTypes || []
-    setScen('excludeTypes', cur.includes(type) ? cur.filter((t) => t !== type) : [...cur, type])
-  }
-  const isDropped = (tier: string) => (scenarioOn.dropPriorities || []).includes(tier)
-  const toggleDropTier = (tier: string) => {
-    const cur = scenarioOn.dropPriorities || []
-    setScen('dropPriorities', cur.includes(tier) ? cur.filter((t) => t !== tier) : [...cur, tier])
-  }
 
   // ── Container resize tracking ───────────────────────────────────────────────
   useEffect(() => {
@@ -380,32 +347,6 @@ export default function PlannerTimeline({
     })
   }, [displayRows, squad])
 
-  const layoutState = useMemo(() => {
-    const rows = baselineRows
-    if (!rows.length) return { parallel: false, sequential: false, hasGaps: false }
-    const startMs = baselineStartD.getTime()
-    const byLane = new Map<number, PlanRow[]>()
-    for (const r of rows) {
-      const idx = Math.max(0, Number(r.laneIndex || 0))
-      if (!byLane.has(idx)) byLane.set(idx, [])
-      byLane.get(idx)!.push(r)
-    }
-    let hasGaps = false
-    for (const laneRows of byLane.values()) {
-      const sorted = laneRows.slice().sort((a, b) => a.plannedStart.getTime() - b.plannedStart.getTime())
-      if (sorted[0].plannedStart.getTime() !== startMs) hasGaps = true
-      for (let i = 1; i < sorted.length; i++) {
-        if (sorted[i].plannedStart.getTime() !== sorted[i - 1].plannedEnd.getTime()) hasGaps = true
-      }
-    }
-    const allAtStart = rows.every((r) => r.plannedStart.getTime() === startMs)
-    return {
-      parallel: rows.length > 1 && byLane.size === rows.length && allAtStart,
-      sequential: byLane.size === 1 && !hasGaps,
-      hasGaps,
-    }
-  }, [baselineRows, baselineStartD])
-
   // ── End / finish markers ─────────────────────────────────────────────────────
   const squadLatestEnd = baselineRows.length ? new Date(Math.max(...baselineRows.map((r) => r.plannedEnd.getTime()))) : null
   const finishX = squadLatestEnd ? wdFromOrigin(squadLatestEnd) * pxPerWorkday : 0
@@ -435,9 +376,7 @@ export default function PlannerTimeline({
 
   // ── Span label / annotations ─────────────────────────────────────────────────
   const baselineActiveWorkdays = useMemo(() => computeActiveWorkdays(baseline), [baseline])
-  const scenarioActiveWorkdays = useMemo(() => computeActiveWorkdays(scenario), [scenario])
   const baselineActiveWeeks = Math.ceil(baselineActiveWorkdays / 5)
-  const durationDelta = scenarioActiveWorkdays - baselineActiveWorkdays
 
   const spanCalendarDays = baseline?.allRows?.length
     ? Math.max(0, Math.round((baseline.latestEnd.getTime() - actualStartDate.getTime()) / 86_400_000))
@@ -517,22 +456,10 @@ export default function PlannerTimeline({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scale, chartOrigin.getTime(), chartTotalWorkdays, pxPerWorkday, primaryMarkers])
 
-  // ── Scenario summary ────────────────────────────────────────────────────────
-  const scenarioDirty = scenarioOn.extraCapacityPct !== 0 ||
-    (scenarioOn.excludeTypes?.length ?? 0) > 0 || (scenarioOn.dropPriorities?.length ?? 0) > 0
-  const deltaWorkdays = baseline && scenario ? scenario.totalWorkdays - baseline.totalWorkdays : 0
-
+  // ── Plan summary ────────────────────────────────────────────────────────────
   const perWorkday = dailyThroughput(team)
-  const scenarioThroughputPerMonth = Number(team?.throughputPerMonth || 0) * (1 + Number(scenarioOn?.extraCapacityPct || 0) / 100)
-
   const scopeEpics = baseline?.allRows?.length || 0
   const scopeItems = (baseline?.allRows || []).reduce((s, r) => s + Number(r.items || 0), 0)
-  const scenarioItems = (scenario?.allRows || []).reduce((s, r) => s + Number(r.items || 0), 0)
-
-  const showScenarioGhost = !dragState && scenarioDirty && !!scenario?.allRows?.length
-  const scenarioFinishX = scenario ? wdFromOrigin(scenario.latestEnd) * pxPerWorkday : null
-  const earlierLater = deltaWorkdays < 0 ? 'earlier' : deltaWorkdays > 0 ? 'later' : 'same'
-  const fasterSlower = durationDelta < 0 ? 'faster' : durationDelta > 0 ? 'slower' : 'no change'
 
   // ── Start-handle drag ───────────────────────────────────────────────────────
   // Stable snapshot of values the window-level pointer handlers need.
@@ -749,7 +676,6 @@ export default function PlannerTimeline({
             <li><span className="font-medium">Start</span> sets when the plan begins — click the date in the Start box (a calendar picker; past dates are disabled) <em>or</em> drag the green <span className="font-medium">Start</span> handle on the chart to slide the whole plan.</li>
             <li><span className="font-medium">Drag bars horizontally</span> to set when each epic starts. Bars that overlap in time share the squad's daily capacity equally and split into their own swimlanes automatically. <span className="font-medium">Drag a bar off the top or left edge</span> of the chart to remove it from the plan.</li>
             <li><span className="font-medium">Lanes</span> are queues — bars inside the same lane stay back-to-back; bars in different lanes share the squad's daily capacity in parallel.</li>
-            <li><span className="font-medium">Layout helpers</span>: <em>Parallel</em> drops every epic into its own lane at the plan start; <em>Sequential</em> stacks them into one lane; <em>Remove gaps</em> pulls every lane back-to-back without touching lane assignments.</li>
             <li><span className="font-medium">Scale</span> picks the zoom — Auto fits the plan exactly; Month / Quarter / Year are fixed zoom levels. Every scale has matching scroll room on both sides, so you can scroll back past Start or forward past End.</li>
           </ul>
         </div>
@@ -759,11 +685,6 @@ export default function PlannerTimeline({
       <div className="mt-2 text-xs text-gray-500 dark:text-gray-400 tabular-nums">
         Pace: <span className="font-semibold text-gray-900 dark:text-gray-100">{Math.round(team?.throughputPerMonth || 0)} items/mo</span>
         <span className="text-gray-400 dark:text-gray-500"> (≈ {perWorkday.toFixed(2)}/workday — average completed work over the selected timeframe)</span>
-        {scenarioDirty && scenarioOn.extraCapacityPct !== 0 && (
-          <span className={`ml-1.5 font-medium ${scenarioOn.extraCapacityPct > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`}>
-            → {Math.round(scenarioThroughputPerMonth)} ({scenarioOn.extraCapacityPct >= 0 ? '+' : ''}{scenarioOn.extraCapacityPct}%)
-          </span>
-        )}
       </div>
 
       {/* Key planner metrics */}
@@ -789,61 +710,25 @@ export default function PlannerTimeline({
         {/* Scope */}
         <div className="rounded-lg border border-gray-100 dark:border-slate-800 bg-gray-50/60 dark:bg-slate-800/30 px-4 py-3">
           <div className="text-[10px] uppercase tracking-wide text-gray-500 mb-1.5">Scope</div>
-          {scenarioDirty && scenario ? (
-            <>
-              <div className="text-2xl font-bold tabular-nums text-gray-900 dark:text-gray-100">{scenarioItems} <span className="text-base font-normal text-gray-500">items</span></div>
-              <div className={`text-sm font-bold mt-1 tabular-nums ${deltaClass(scenarioItems - scopeItems)}`}>
-                {scenarioItems !== scopeItems ? <>{scenarioItems > scopeItems ? '+' : '−'}{Math.abs(scenarioItems - scopeItems)} items</> : 'no change'}
-              </div>
-              <div className="text-[11px] text-gray-400 dark:text-gray-500 mt-0.5 tabular-nums">was {scopeItems} items · {scopeEpics} {scopeEpics === 1 ? 'epic' : 'epics'}</div>
-            </>
-          ) : (
-            <>
-              <div className="text-2xl font-bold tabular-nums text-gray-900 dark:text-gray-100">{scopeItems} <span className="text-base font-normal text-gray-500">items</span></div>
-              <div className="text-[11px] text-gray-400 mt-1.5 tabular-nums">across {scopeEpics} {scopeEpics === 1 ? 'epic' : 'epics'}</div>
-              <div className="text-[11px] mt-0.5 leading-4 min-h-[1rem]" />
-            </>
-          )}
+          <div className="text-2xl font-bold tabular-nums text-gray-900 dark:text-gray-100">{scopeItems} <span className="text-base font-normal text-gray-500">items</span></div>
+          <div className="text-[11px] text-gray-400 mt-1.5 tabular-nums">across {scopeEpics} {scopeEpics === 1 ? 'epic' : 'epics'}</div>
+          <div className="text-[11px] mt-0.5 leading-4 min-h-[1rem]" />
         </div>
 
         {/* Duration */}
         <div className="rounded-lg border border-gray-100 dark:border-slate-800 bg-gray-50/60 dark:bg-slate-800/30 px-4 py-3">
           <div className="text-[10px] uppercase tracking-wide text-gray-500 mb-1.5">Duration</div>
-          {scenarioDirty && scenario ? (
-            <>
-              <div className="text-2xl font-bold tabular-nums text-gray-900 dark:text-gray-100">{scenarioActiveWorkdays} <span className="text-base font-normal text-gray-500">workdays</span></div>
-              <div className={`text-sm font-bold mt-1 tabular-nums ${deltaClass(durationDelta)}`}>
-                {durationDelta !== 0 ? <>{durationDelta > 0 ? '+' : '−'}{Math.abs(durationDelta)} wd {fasterSlower}</> : 'no change'}
-              </div>
-              <div className="text-[11px] text-gray-400 dark:text-gray-500 mt-0.5 tabular-nums">was {baselineActiveWorkdays} wd · ≈ {baselineActiveWeeks} wks</div>
-            </>
-          ) : (
-            <>
-              <div className="text-2xl font-bold tabular-nums text-gray-900 dark:text-gray-100">{baselineActiveWorkdays} <span className="text-base font-normal text-gray-500">workdays</span></div>
-              <div className="text-[11px] text-gray-400 mt-1.5 tabular-nums">≈ {baselineActiveWeeks} weeks of active work</div>
-              <div className="text-[11px] mt-0.5 leading-4 min-h-[1rem]" />
-            </>
-          )}
+          <div className="text-2xl font-bold tabular-nums text-gray-900 dark:text-gray-100">{baselineActiveWorkdays} <span className="text-base font-normal text-gray-500">workdays</span></div>
+          <div className="text-[11px] text-gray-400 mt-1.5 tabular-nums">≈ {baselineActiveWeeks} weeks of active work</div>
+          <div className="text-[11px] mt-0.5 leading-4 min-h-[1rem]" />
         </div>
 
         {/* Delivery */}
         <div className="rounded-lg border border-gray-100 dark:border-slate-800 bg-gray-50/60 dark:bg-slate-800/30 px-4 py-3">
           <div className="text-[10px] uppercase tracking-wide text-gray-500 mb-1.5">Delivery</div>
-          {scenarioDirty && scenario && baseline ? (
-            <>
-              <div className="text-2xl font-bold text-gray-900 dark:text-gray-100 truncate">{formatDate(scenario.latestEnd)}</div>
-              <div className={`text-sm font-bold mt-1 tabular-nums ${deltaClass(deltaWorkdays)}`}>
-                {deltaWorkdays !== 0 ? <>{deltaWorkdays > 0 ? '+' : '−'}{Math.abs(deltaWorkdays)} wd {earlierLater}</> : 'no change'}
-              </div>
-              <div className="text-[11px] text-gray-400 dark:text-gray-500 mt-0.5 truncate">was {formatDate(baseline.latestEnd)}</div>
-            </>
-          ) : (
-            <>
-              <div className="text-2xl font-bold text-gray-900 dark:text-gray-100 truncate">{formatDate(baseline ? baseline.latestEnd : baselineStartD)}</div>
-              <div className="text-[11px] text-gray-400 mt-1.5 tabular-nums">all work delivered in {daysToDelivery} days</div>
-              <div className="text-[11px] mt-0.5 leading-4 min-h-[1rem]" />
-            </>
-          )}
+          <div className="text-2xl font-bold text-gray-900 dark:text-gray-100 truncate">{formatDate(baseline ? baseline.latestEnd : baselineStartD)}</div>
+          <div className="text-[11px] text-gray-400 mt-1.5 tabular-nums">all work delivered in {daysToDelivery} days</div>
+          <div className="text-[11px] mt-0.5 leading-4 min-h-[1rem]" />
         </div>
       </div>
 
@@ -857,7 +742,7 @@ export default function PlannerTimeline({
         </div>
       ) : (
         <>
-          {/* Toolbar: scale + layout helpers */}
+          {/* Toolbar: scale */}
           <div className="mt-4 flex items-center gap-3 flex-wrap text-xs">
             <div className="flex items-center gap-2">
               <span className="text-[10px] uppercase tracking-wide text-gray-400">Scale</span>
@@ -870,28 +755,6 @@ export default function PlannerTimeline({
                   >{s}</button>
                 ))}
               </div>
-            </div>
-
-            <div className="flex items-center gap-1.5 ml-auto">
-              <span className="text-[10px] uppercase tracking-wide text-gray-400">Layout</span>
-              <button
-                className={`inline-flex items-center gap-1 px-2 py-1 rounded border text-[11px] transition-colors ${layoutBtnClass(layoutState.parallel)}`}
-                aria-pressed={layoutState.parallel}
-                title={layoutState.parallel ? 'Already fully parallel — every epic in its own lane at the plan start' : 'Put every epic in its own lane, starting at the plan start'}
-                onClick={() => onLayout('split')}
-              ><Rows3 size={12} />Parallel</button>
-              <button
-                className={`inline-flex items-center gap-1 px-2 py-1 rounded border text-[11px] transition-colors ${layoutBtnClass(layoutState.sequential)}`}
-                aria-pressed={layoutState.sequential}
-                title={layoutState.sequential ? 'Already sequential — one lane, back-to-back from the plan start' : 'Stack everything sequentially in a single lane'}
-                onClick={() => onLayout('sequential')}
-              ><Columns3 size={12} />Sequential</button>
-              <button
-                className={`inline-flex items-center gap-1 px-2 py-1 rounded border text-[11px] transition-colors ${layoutState.hasGaps ? 'border-gray-200 dark:border-slate-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-slate-800' : 'border-gray-100 dark:border-slate-800 text-gray-300 dark:text-gray-600 cursor-not-allowed'}`}
-                disabled={!layoutState.hasGaps}
-                title={layoutState.hasGaps ? 'Pull every lane back-to-back, closing the gaps' : 'No gaps to remove — every lane is already flush'}
-                onClick={() => onLayout('tighten')}
-              ><ChevronsRightLeft size={12} />Remove gaps</button>
             </div>
           </div>
 
@@ -952,14 +815,6 @@ export default function PlannerTimeline({
                   className="absolute top-6 z-[8] inline-flex items-center gap-1 text-[10px] font-medium tabular-nums bg-gray-100 dark:bg-slate-800 text-gray-600 dark:text-gray-300 px-1.5 py-0.5 rounded whitespace-nowrap"
                   style={{ left: `${LABEL_COL_PX + finishX}px`, transform: 'translateX(-50%)' }}
                 ><FlagTriangleLeft size={11} className="shrink-0" /> {shortDate(squadLatestEnd || baseline.latestEnd)}</div>
-
-                {showScenarioGhost && scenarioFinishX !== null && deltaWorkdays !== 0 && scenario && (
-                  <div
-                    title="What-if delivery"
-                    className={`absolute top-6 z-[9] inline-flex items-center gap-1 text-[10px] font-semibold tabular-nums px-1.5 py-0.5 rounded whitespace-nowrap ${deltaWorkdays < 0 ? 'bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300' : 'bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300'}`}
-                    style={{ left: `${LABEL_COL_PX + scenarioFinishX}px`, transform: 'translateX(-50%)' }}
-                  >{shortDate(scenario.latestEnd)} ({deltaWorkdays > 0 ? '+' : '−'}{Math.abs(deltaWorkdays)} wd)</div>
-                )}
               </div>
 
               {/* Date axis */}
@@ -989,15 +844,6 @@ export default function PlannerTimeline({
                   {todayX !== null && <div className="absolute top-0 bottom-0 w-px border-l border-dashed border-blue-500 dark:border-blue-400" style={{ left: `${todayX}px` }} />}
                   {startX > 0 && <div className="absolute top-0 bottom-0 w-px border-l border-dashed border-emerald-400/70 dark:border-emerald-500/70" style={{ left: `${startX}px` }} />}
                   <div className="absolute top-0 bottom-0 w-px border-l border-dashed border-gray-400/70 dark:border-gray-500/70" style={{ left: `${finishX}px` }} />
-                  {showScenarioGhost && scenarioFinishX !== null && deltaWorkdays !== 0 && (
-                    <>
-                      <div
-                        className={`absolute top-0 bottom-0 ${deltaWorkdays < 0 ? 'bg-emerald-400/10' : 'bg-amber-400/10'}`}
-                        style={{ left: `${Math.min(finishX, scenarioFinishX)}px`, width: `${Math.abs(finishX - scenarioFinishX)}px` }}
-                      />
-                      <div className={`absolute top-0 bottom-0 w-px border-l-2 border-dashed ${deltaWorkdays < 0 ? 'border-emerald-500' : 'border-amber-500'}`} style={{ left: `${scenarioFinishX}px` }} />
-                    </>
-                  )}
                 </div>
 
                 {lanes.map((lane) => (
@@ -1062,69 +908,6 @@ export default function PlannerTimeline({
                     </div>
                   </div>
                 ))}
-              </div>
-            </div>
-          </div>
-
-          {/* Tweaks */}
-          <div className="mt-14">
-            <div className="flex items-start justify-between gap-3">
-              <AppInfoPanel trigger={<h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Tweaks</h2>}>
-                <div>
-                  <div className="font-semibold text-gray-800 dark:text-gray-200 mb-1">How it works</div>
-                  <ul className="space-y-1 list-disc list-inside">
-                    <li>Flip the controls below to ask <em>"what if?"</em> — the impact is shown live as <span className="font-medium">big delta numbers</span> in the Scope / Duration / Delivery boxes above and as a dashed scenario delivery line on the chart.</li>
-                    <li><span className="font-medium">Capacity</span> scales the data-derived pace up or down (−50% to +100%) — e.g. people joining or leaving the squad.</li>
-                    <li><span className="font-medium">Descope</span> removes <span className="font-medium">whole epics</span> from the plan (by priority tier — Critical is never dropped); <span className="font-medium">Exclude</span> removes individual <span className="font-medium">items</span> (by issue type) from inside every epic that stays.</li>
-                    <li>Real epics inherit their Jira priority; set or override it per epic in the Scope table above. Click <span className="font-medium">Reset</span> (top right) to clear all tweaks at once.</li>
-                  </ul>
-                </div>
-              </AppInfoPanel>
-              {scenarioDirty && (
-                <button type="button" className="mt-2 text-xs font-medium text-gray-500 hover:text-gray-800 dark:hover:text-gray-200 shrink-0" onClick={resetScenario}>Reset</button>
-              )}
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-2.5 text-xs">
-              {/* Descope */}
-              <div className="flex items-center gap-2 py-1 flex-wrap" title="Drop whole epics at the toggled priority tiers">
-                <span className="whitespace-nowrap w-28"><span className="text-gray-700 dark:text-gray-300">Descope</span> <span className="text-gray-400 dark:text-gray-500">epics</span></span>
-                <div className="flex flex-wrap gap-1">
-                  {DROP_TIERS.map((tier) => (
-                    <button
-                      key={tier} type="button"
-                      className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${!isDropped(tier) ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300' : 'bg-gray-100 text-gray-400 line-through dark:bg-slate-800 dark:text-gray-500'}`}
-                      title={isDropped(tier) ? `Keep ${tier}-priority epics` : `Drop all ${tier}-priority epics`}
-                      onClick={() => toggleDropTier(tier)}
-                    >{tier}</button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Capacity */}
-              <div className="flex items-center gap-2 py-1">
-                <span className="text-gray-700 dark:text-gray-300 whitespace-nowrap w-28">Capacity</span>
-                <input
-                  value={scenarioOn.extraCapacityPct}
-                  type="range" min={-50} max={100} step={5}
-                  className="flex-1"
-                  onChange={(e) => setScen('extraCapacityPct', Number(e.target.value))}
-                />
-                <span className={`font-mono tabular-nums w-12 text-right ${scenarioOn.extraCapacityPct ? deltaClass(-scenarioOn.extraCapacityPct) : 'text-gray-700 dark:text-gray-300'}`}>{scenarioOn.extraCapacityPct >= 0 ? '+' : ''}{scenarioOn.extraCapacityPct}%</span>
-              </div>
-
-              {/* Exclude */}
-              <div className="flex items-center gap-2 py-1 flex-wrap" title="Exclude individual issues of these types from every epic's child count">
-                <span className="whitespace-nowrap w-28"><span className="text-gray-700 dark:text-gray-300">Exclude</span> <span className="text-gray-400 dark:text-gray-500">items</span></span>
-                <div className="flex flex-wrap gap-1">
-                  {EXCLUDE_TYPES.map((type) => (
-                    <button
-                      key={type} type="button"
-                      className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${!isExcluded(type) ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300' : 'bg-gray-100 text-gray-400 line-through dark:bg-slate-800 dark:text-gray-500'}`}
-                      title={isExcluded(type) ? `Include ${type}` : `Exclude ${type}`}
-                      onClick={() => toggleExcludeType(type)}
-                    >{type}</button>
-                  ))}
-                </div>
               </div>
             </div>
           </div>

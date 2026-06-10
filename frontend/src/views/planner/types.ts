@@ -7,12 +7,6 @@ export interface TeamConfig {
   throughputPerMonth: number
 }
 
-export interface ScenarioOn {
-  extraCapacityPct: number
-  excludeTypes: string[]
-  dropPriorities: string[]
-}
-
 export interface EpicChild {
   key: string
   summary: string

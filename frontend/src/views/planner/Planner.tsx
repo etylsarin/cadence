@@ -6,7 +6,7 @@ import PlannerTimeline from './PlannerTimeline'
 import { simulate, EPIC_COLORS, countWorkdays, normalizePriority, ymd, type SimResult, type EpicInput } from './simulate'
 import { useProject, PROJECTS as ALL_PROJECTS } from '@/hooks/useProject'
 import type { PeriodSelection } from '@/lib/jql'
-import type { TeamConfig, ScenarioOn, RecentEpic, SelectedEpic, EpicOverride, ReorderChange, EpicEditPayload, EpicChild } from './types'
+import type { TeamConfig, RecentEpic, SelectedEpic, EpicOverride, ReorderChange, EpicEditPayload, EpicChild } from './types'
 
 const DEFAULT_EXCLUDED_STATUSES = new Set(['Delivered', 'Closed', 'Rejected', 'Done'])
 
@@ -41,10 +41,6 @@ export default function Planner() {
 
   const [statusInScope, setStatusInScope] = useState<Record<string, boolean>>({})
 
-  const [scenarioOn, setScenarioOn] = useState<ScenarioOn>({
-    extraCapacityPct: 0, excludeTypes: [], dropPriorities: [],
-  })
-
   // Custom epics — placeholders for work not yet in Jira, keyed by squad.
   const [customEpics, setCustomEpics] = useState<Record<string, RecentEpic[]>>({})
   const customEpicSeq = useRef(0)
@@ -59,49 +55,29 @@ export default function Planner() {
 
   // ── Helpers ─────────────────────────────────────────────────────────────────
 
-  const countInScope = useCallback((epic: SelectedEpic, opts: { excludeTypes?: string[] | null; skipOverride?: boolean } = {}): number => {
-    const { excludeTypes = null, skipOverride = false } = opts
-    if (!skipOverride && epic.overrideItems != null) return Math.max(0, Number(epic.overrideItems))
+  const countInScope = useCallback((epic: SelectedEpic): number => {
+    if (epic.overrideItems != null) return Math.max(0, Number(epic.overrideItems))
     if (epic.custom) return Math.max(0, Number(epic.customItems || 0))
     if (!epic.children) return 0
-    const excl = excludeTypes && excludeTypes.length ? new Set(excludeTypes) : null
-    return epic.children.filter((c) => {
-      if (!statusInScope[c.status]) return false
-      if (excl && excl.has(c.type)) return false
-      return true
-    }).length
+    return epic.children.filter((c) => statusInScope[c.status]).length
   }, [statusInScope])
 
   const epicsForSquad = useMemo(() => selectedEpics.filter((e) => e.project === squad), [selectedEpics, squad])
 
-  const buildTeam = useCallback((opts: { extraCapacityPct?: number } = {}): TeamConfig => {
-    const { extraCapacityPct = 0 } = opts
-    const base = teamConfig[squad]
-    return {
-      id: base.id,
-      name: base.name,
-      throughputPerMonth: base.throughputPerMonth * (1 + extraCapacityPct / 100),
-    }
-  }, [teamConfig, squad])
+  const buildTeam = useCallback((): TeamConfig => teamConfig[squad], [teamConfig, squad])
 
-  const buildEpics = useCallback((list: SelectedEpic[], opts: { excludeTypes?: string[] | null; dropPriorities?: string[] | null } = {}): EpicInput[] => {
-    const { excludeTypes = null, dropPriorities = null } = opts
-    const dropSet = dropPriorities && dropPriorities.length ? new Set(dropPriorities) : null
-    return list.map((e, idx) => {
-      const tier = e.priorityLevel || 'Medium'
-      const dropped = !!dropSet && dropSet.has(tier)
-      return {
-        id: e.key,
-        name: e.overrideTitle || e.summary || e.key,
-        teamId: squad,
-        items: dropped ? 0 : countInScope(e, { excludeTypes }),
-        color: e.color,
-        priority: idx + 1,
-        priorityLevel: tier,
-        earliestStartWorkday: Math.max(0, Number(e.earliestStartWorkday || 0)),
-        laneIndex: Math.max(0, Number(e.laneIndex || 0)),
-      }
-    })
+  const buildEpics = useCallback((list: SelectedEpic[]): EpicInput[] => {
+    return list.map((e, idx) => ({
+      id: e.key,
+      name: e.overrideTitle || e.summary || e.key,
+      teamId: squad,
+      items: countInScope(e),
+      color: e.color,
+      priority: idx + 1,
+      priorityLevel: e.priorityLevel || 'Medium',
+      earliestStartWorkday: Math.max(0, Number(e.earliestStartWorkday || 0)),
+      laneIndex: Math.max(0, Number(e.laneIndex || 0)),
+    }))
   }, [squad, countInScope])
 
   const baselineStart = useMemo(() => new Date(startDate + 'T00:00:00'), [startDate])
@@ -110,16 +86,6 @@ export default function Planner() {
     if (!epicsForSquad.length) return null
     return simulate({ teams: [buildTeam()], epics: buildEpics(epicsForSquad), start: baselineStart, focusMode: 'parallel' })
   }, [epicsForSquad, buildTeam, buildEpics, baselineStart])
-
-  const scenario = useMemo<SimResult | null>(() => {
-    if (!epicsForSquad.length) return null
-    return simulate({
-      teams: [buildTeam({ extraCapacityPct: scenarioOn.extraCapacityPct })],
-      epics: buildEpics(epicsForSquad, { excludeTypes: scenarioOn.excludeTypes, dropPriorities: scenarioOn.dropPriorities }),
-      start: baselineStart,
-      focusMode: 'parallel',
-    })
-  }, [epicsForSquad, buildTeam, buildEpics, baselineStart, scenarioOn])
 
   // ── Data loading ────────────────────────────────────────────────────────────
 
@@ -443,19 +409,6 @@ export default function Planner() {
     })
   }, [collapseVacatedGap])
 
-  /** One-click layout helpers for the selected squad. */
-  const applyLayout = useCallback((kind: 'split' | 'sequential' | 'tighten') => {
-    setSelectedEpics((prev) => {
-      let i = 0
-      return prev.map((e) => {
-        if (e.project !== squad) return e
-        if (kind === 'split') return { ...e, earliestStartWorkday: 0, laneIndex: i++ }
-        if (kind === 'sequential') return { ...e, earliestStartWorkday: 0, laneIndex: 0 }
-        return { ...e, earliestStartWorkday: 0 }   // tighten
-      })
-    })
-  }, [squad])
-
   // Keep `period` referenced (parity with the Vue version's reactive use).
   void period
 
@@ -501,15 +454,11 @@ export default function Planner() {
             team={teamConfig[squad]}
             startDate={startDate}
             baseline={baseline}
-            scenario={scenario}
             previewBaseline={previewBaseline}
-            scenarioOn={scenarioOn}
-            onScenarioOnChange={setScenarioOn}
             onStartDateChange={setStartDateClamped}
             onDragPreview={setDragPreview}
             onReorder={reorder}
             onRemove={removeEpic}
-            onLayout={applyLayout}
           />
         </div>
       </div>
