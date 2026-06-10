@@ -11,7 +11,9 @@ from typing import Optional
 TERMINAL_STATUSES = {"Closed", "Done", "Rejected", "Delivered"}
 FLOW_DLT_GROUPS = {"dev", "wait_testing", "testing", "wait_sit", "sit", "wait_uat", "uat", "wait_release"}
 
-_FLOW_CONFIG_PATH  = Path(__file__).parent.parent / "data" / "gold" / "flow_config.json"
+# Live override in the shared data layer (same path flow_shared.py reads);
+# falls back to the default mapping shipped with the pipeline.
+_FLOW_CONFIG_PATH  = Path(__file__).parents[3] / "data" / "gold" / "flow_config.json"
 _FLOW_DEFAULT_PATH = Path(__file__).parent.parent / "flow_config_default.json"
 
 
