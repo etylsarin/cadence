@@ -7,6 +7,7 @@ In production, secrets are injected as environment variables.
 
 import os
 import re as _re
+import secrets as _secrets
 from pathlib import Path
 
 # Config files (config.env, .env) live at the repo root, one level above backend/.
@@ -77,13 +78,20 @@ JIRA_URL = _app_cfg.get("JIRA_URL") or os.environ.get("JIRA_URL") or _local_env.
 # CORS allowed origins — comma-separated list in config.env.
 ALLOWED_ORIGINS = [o.strip() for o in _app_cfg.get("ALLOWED_ORIGINS", "").split(",") if o.strip()]
 
-# ── App authentication (HTTP Basic, optional) ─────────────────────────────────
+# ── App authentication (login page, optional) ─────────────────────────────────
 # Secrets — read from env vars (production) or .env (local). When BOTH
-# user and password are set, every request must present matching HTTP Basic
-# credentials (see server.py). When unset, auth is disabled — the local-dev
-# default, so nothing breaks until you opt in by setting these in production.
+# user and password are set, the app requires a login (see server.py). When
+# unset, auth is disabled — the local-dev default, so nothing breaks until you
+# opt in by setting these in production.
 AUTH_USER     = os.environ.get("CADENCE_AUTH_USER")     or _local_env.get("CADENCE_AUTH_USER", "")
 AUTH_PASSWORD = os.environ.get("CADENCE_AUTH_PASSWORD") or _local_env.get("CADENCE_AUTH_PASSWORD", "")
+
+# Session-cookie signing secret. Set it to keep logins valid across server
+# restarts; when unset a fresh secret is generated at boot (every restart
+# signs everyone out).
+SESSION_SECRET = (os.environ.get("CADENCE_SESSION_SECRET")
+                  or _local_env.get("CADENCE_SESSION_SECRET", "")
+                  or _secrets.token_hex(32))
 
 
 # ── Input validators ──────────────────────────────────────────────────────────

@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowRight, Sun, Moon, Heart, RefreshCw, AlertTriangle } from 'lucide-react'
+import { ArrowRight, Sun, Moon, Heart, RefreshCw, AlertTriangle, LogOut } from 'lucide-react'
 import { useDarkMode } from '@/hooks/useDarkMode'
+import { auth, logout } from '@/lib/auth'
 import { TOOL_META } from '@/constants/tools'
 import type { Tool, SyncState } from '@/types'
 
@@ -48,13 +49,24 @@ export default function HomePage() {
   return (
     <div className="min-h-screen bg-white dark:bg-slate-900 flex flex-col items-center justify-center px-5 pt-16 pb-12 relative">
       <div className="fixed bottom-0 right-0 left-0 flex items-center justify-between px-4 py-3 text-xs text-gray-400 dark:text-gray-600 bg-white dark:bg-slate-900 border-t border-gray-100 dark:border-slate-800">
-        <button
-          onClick={toggle}
-          className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-800 border border-gray-200 dark:border-slate-700 transition-colors"
-        >
-          {dark ? <Sun size={13} /> : <Moon size={13} />}
-          <span>{dark ? 'Light mode' : 'Dark mode'}</span>
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={toggle}
+            className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-800 border border-gray-200 dark:border-slate-700 transition-colors"
+          >
+            {dark ? <Sun size={13} /> : <Moon size={13} />}
+            <span>{dark ? 'Light mode' : 'Dark mode'}</span>
+          </button>
+          {auth.required && (
+            <button
+              onClick={() => void logout()}
+              className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-800 border border-gray-200 dark:border-slate-700 transition-colors"
+            >
+              <LogOut size={13} />
+              <span>Sign out</span>
+            </button>
+          )}
+        </div>
         <div className="flex items-center gap-1.5">
           <Heart size={11} className="shrink-0" />
           <span>v{version}</span>
