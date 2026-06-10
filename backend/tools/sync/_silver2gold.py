@@ -25,6 +25,7 @@ import csv
 import importlib
 import json
 import sys
+from dataclasses import dataclass, field
 from pathlib import Path
 from multiprocessing.pool import ThreadPool
 
@@ -33,6 +34,19 @@ REPO_ROOT  = SCRIPT_DIR.parent.parent
 DATA_DIR   = REPO_ROOT / "data"
 SILVER_DIR = DATA_DIR / "silver"
 TRANS_DIR  = SCRIPT_DIR / "transformations"
+
+# Make the transformations/ package importable regardless of the caller's cwd
+# (subprocess runs with cwd=SCRIPT_DIR, but in-process callers may not).
+sys.path.insert(0, str(SCRIPT_DIR))
+
+
+@dataclass
+class Silver2GoldResult:
+    """Structured outcome of a silver→gold run."""
+    loaded: int = 0
+    succeeded: list = field(default_factory=list)
+    failed: list = field(default_factory=list)
+    ran: bool = True   # False when no transformations were discovered
 
 
 # ── Silver loader ─────────────────────────────────────────────────────────────
@@ -97,8 +111,6 @@ def load_transformation(name: str):
     return module
 
 
-# ── CLI ───────────────────────────────────────────────────────────────────────
-
 # ── Parallel transformation runner ────────────────────────────────────────────
 
 def run_transformation(args_tuple):
@@ -118,40 +130,55 @@ def run_transformation(args_tuple):
     except Exception as e:
         return (name, False, f"ERROR: {e}")
 
+
+# ── Orchestration ─────────────────────────────────────────────────────────────
+
+def run(names: list | None = None) -> Silver2GoldResult:
+    """Run silver→gold transformations and return a structured result.
+
+    Importable entry point; same stdout/stderr output as the CLI.
+    """
+    names = names or discover_transformations()
+    if not names:
+        print("No transformations found in transformations/", file=sys.stderr)
+        return Silver2GoldResult(ran=False)
+
+    print("loading silver...")
+    issues = load_silver()
+
+    # Run transformations in parallel (4 workers); each gets the shared issues list.
+    print(f"running {len(names)} transformation(s) in parallel...")
+    with ThreadPool(4) as pool:
+        results = pool.map(run_transformation, [(name, issues) for name in names])
+
+    succeeded, failed = [], []
+    for name, success, message in results:
+        if success:
+            print(f"{name}: {message}")
+            succeeded.append(name)
+        else:
+            print(f"{name}: {message}", file=sys.stderr)
+            failed.append(name)
+
+    if failed:
+        print(f"\nFailed transformations: {', '.join(failed)}", file=sys.stderr)
+    else:
+        print("Done.")
+
+    return Silver2GoldResult(loaded=len(issues), succeeded=succeeded, failed=failed)
+
+
 # ── CLI ───────────────────────────────────────────────────────────────────────
 
-parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-parser.add_argument("transformations", nargs="*", metavar="NAME",
-                    help="transformation(s) to run (default: all)")
-args = parser.parse_args()
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("transformations", nargs="*", metavar="NAME",
+                        help="transformation(s) to run (default: all)")
+    args = parser.parse_args()
+    result = run(args.transformations or None)
+    return 0 if (result.ran and not result.failed) else 1
 
-names = args.transformations or discover_transformations()
 
-if not names:
-    print("No transformations found in transformations/", file=sys.stderr)
-    sys.exit(1)
-
-print("loading silver...")
-issues = load_silver()
-
-# Run transformations in parallel (4 workers)
-print(f"running {len(names)} transformation(s) in parallel...")
-with ThreadPool(4) as pool:
-    # Prepare args: each transformation gets the shared issues list
-    transformation_args = [(name, issues) for name in names]
-    results = pool.map(run_transformation, transformation_args)
-
-# Report results
-errors = []
-for name, success, message in results:
-    if success:
-        print(f"{name}: {message}")
-    else:
-        print(f"{name}: {message}", file=sys.stderr)
-        errors.append(name)
-
-if errors:
-    print(f"\nFailed transformations: {', '.join(errors)}", file=sys.stderr)
-    sys.exit(1)
-
-print("Done.")
+if __name__ == "__main__":
+    sys.exit(main())

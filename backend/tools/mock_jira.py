@@ -3,7 +3,7 @@
 mock_jira.py — Offline Jira API stand-in for the Sync pipeline.
 
 All tools read exclusively from the synced local mirror, so the only Jira
-consumer left is the Sync pipeline (backend/tools/sync/_gettickets.sh). This
+consumer left is the Sync pipeline (backend/tools/sync/_gettickets.py). This
 server provides exactly the two endpoints it calls, backed by a deterministic
 ticket corpus generated in-memory at startup by seed_demo_data.generate()
 (includes Epics, open backlog, sprints, fix versions — no data/ needed).
@@ -89,7 +89,7 @@ def search_jql(body: JqlSearch):
 
 @app.get("/rest/api/3/issue/{key}")
 def issue_detail(key: str, expand: str = ""):
-    """Full raw issue (fields + changelog) — what _gettickets.sh downloads."""
+    """Full raw issue (fields + changelog) — what _gettickets.py downloads."""
     t = _by_key.get(key)
     if not t:
         raise HTTPException(status_code=404, detail=f"Issue {key} not found")

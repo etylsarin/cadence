@@ -48,7 +48,7 @@ def _csv_stats() -> dict:
 
 def _last_sync() -> Optional[str]:
     # Stored under data/ (the persistent volume) so the timestamp
-    # survives container revisions. Written by _gettickets.sh.
+    # survives container revisions. Written by _gettickets.py.
     try:
         return (DATA_DIR / "last_sync.txt").read_text().strip()
     except Exception:
@@ -72,7 +72,7 @@ def _count_silver() -> Optional[int]:
 
 
 def _parse_log_summary(path: Path) -> dict:
-    """Extract summary fields from a log file (handles both sync.sh and pipeline.py formats)."""
+    """Extract summary fields from a log file (handles both _gettickets.py and pipeline.py formats)."""
     result: dict = {}
     is_pipeline = False
     stages_failed = []
@@ -96,7 +96,7 @@ def _parse_log_summary(path: Path) -> dict:
                         stages_failed.append(label)
                 elif is_pipeline and line.strip().startswith("Done."):
                     result["done"] = True
-                # ── sync.sh output (embedded inside pipeline fetch stage) ──
+                # ── _gettickets.py output (embedded inside pipeline fetch stage) ──
                 elif "DISCOVER  " in line:
                     parts = line.strip().split("DISCOVER  ", 1)
                     if len(parts) > 1:

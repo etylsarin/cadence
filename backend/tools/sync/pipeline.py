@@ -3,8 +3,8 @@
 pipeline.py — Sync full pipeline runner.
 
 Stages:
-  fetch           : _gettickets.sh     (download / update bronze from Jira)
-  repair          : _repair.sh         (reverse false deletions in bronze)
+  fetch           : _gettickets.py     (download / update bronze from Jira)
+  repair          : _repair.py         (reverse false deletions in bronze)
   bronze → silver : _bronze2silver.py  (clean bronze JSON → silver)
   silver → gold   : _silver2gold.py    (compute metrics CSVs)
 
@@ -16,7 +16,7 @@ Usage:
   ./pipeline.py --all          # same
   ./pipeline.py --silver-only  # silver → gold only (no Jira API calls)
   ./pipeline.py --gold-only    # alias for --silver-only
-  ./pipeline.py --force        # pass --force to _gettickets.sh (re-download all)
+  ./pipeline.py --force        # pass --force to _gettickets.py (re-download all)
 """
 
 import argparse
@@ -74,7 +74,7 @@ group.add_argument("--silver-only", dest="mode", action="store_const", const="si
 group.add_argument("--gold-only",   dest="mode", action="store_const", const="silver",
                    help="alias for --silver-only")
 parser.add_argument("--force", action="store_true",
-                    help="pass --force to sync.sh (re-download all tickets)")
+                    help="pass --force to _gettickets.py (re-download all tickets)")
 args = parser.parse_args()
 
 mode      = args.mode or "all"
@@ -96,7 +96,7 @@ with open(log_path, "w") as log_fh:
     tee(banner, log_fh)
 
     if run_fetch:
-        cmd = ["bash", str(SCRIPT_DIR / "_gettickets.sh")]
+        cmd = [sys.executable, str(SCRIPT_DIR / "_gettickets.py")]
         if args.force:
             cmd.append("--force")
         rc = run_stage("fetch", cmd, log_fh)
@@ -104,7 +104,7 @@ with open(log_path, "w") as log_fh:
             tee(f"\nERROR: fetch exited {rc} — aborting.\n", log_fh)
             sys.exit(rc)
 
-        rc = run_stage("repair", ["bash", str(SCRIPT_DIR / "_repair.sh"), "--apply"], log_fh)
+        rc = run_stage("repair", [sys.executable, str(SCRIPT_DIR / "_repair.py"), "--apply"], log_fh)
         if rc != 0:
             tee(f"\nERROR: repair exited {rc} — aborting.\n", log_fh)
             sys.exit(rc)
