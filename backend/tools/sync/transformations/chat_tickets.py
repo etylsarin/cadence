@@ -33,9 +33,9 @@ discovered_in_phase  (bugs only) phase string (e.g. "Production")
 
 from transformations._lib import (
     field_value,
+    first_terminal,
     parse_dt,
     status_transitions,
-    first_terminal,
 )
 
 OUTPUT = "data/gold/chat_tickets.jsonl"
@@ -43,6 +43,7 @@ FIELDS = []  # Not used — JSONL writer ignores this
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
 
 def _extract_text(node, parts: list):
     """Recursively pull plain text out of a Jira document node."""
@@ -79,6 +80,7 @@ def _sprint_name(sprint_field):
     candidates = [s for s in sprint_field if isinstance(s, dict) and s.get("name")]
     if not candidates:
         return None
+
     def _sprint_sort_key(s):
         dt = parse_dt(s.get("endDate", "") or "")
         ts = dt.timestamp() if dt else 0
@@ -98,39 +100,40 @@ def _ymd(iso_str: str):
 
 # ── Transformation ────────────────────────────────────────────────────────────
 
+
 def transform(issues: list) -> list:
     rows = []
 
     for issue in issues:
-        key    = issue.get("key", "")
+        key = issue.get("key", "")
         fields = issue.get("fields", {})
 
-        itype   = (fields.get("issuetype") or {}).get("name", "")
-        project = (fields.get("project")   or {}).get("key",  "")
-        status  = (fields.get("status")    or {}).get("name", "")
+        itype = (fields.get("issuetype") or {}).get("name", "")
+        project = (fields.get("project") or {}).get("key", "")
+        status = (fields.get("status") or {}).get("name", "")
         priority = (fields.get("priority") or {}).get("name", "")
         assignee = (fields.get("assignee") or {}).get("displayName") or None
-        sp       = fields.get("customfield_10005")
+        sp = fields.get("customfield_10005")
 
         transitions = status_transitions(issue)
-        terminal_t  = first_terminal(transitions)
+        terminal_t = first_terminal(transitions)
 
         row = {
-            "key":         key,
-            "summary":     fields.get("summary", ""),
+            "key": key,
+            "summary": fields.get("summary", ""),
             "description": _description_text(fields.get("description")),
-            "type":        itype,
-            "project":     project,
-            "status":      status,
-            "priority":    priority,
-            "assignee":    assignee,
+            "type": itype,
+            "project": project,
+            "status": status,
+            "priority": priority,
+            "assignee": assignee,
             "story_points": float(sp) if sp is not None else None,
-            "sprint":      _sprint_name(fields.get("customfield_10007")),
-            "epic":        fields.get("customfield_10008") or None,
-            "labels":      fields.get("labels") or [],
-            "created":     _ymd(fields.get("created", "")),
-            "updated":     _ymd(fields.get("updated", "")),
-            "resolved":    _ymd(terminal_t["created"]) if terminal_t else None,
+            "sprint": _sprint_name(fields.get("customfield_10007")),
+            "epic": fields.get("customfield_10008") or None,
+            "labels": fields.get("labels") or [],
+            "created": _ymd(fields.get("created", "")),
+            "updated": _ymd(fields.get("updated", "")),
+            "resolved": _ymd(terminal_t["created"]) if terminal_t else None,
             "transitions": [
                 {"from": t["from"], "to": t["to"], "date": _ymd(t["created"])}
                 for t in transitions
@@ -139,9 +142,11 @@ def transform(issues: list) -> list:
 
         # Bug-specific quality fields
         if itype == "Bug":
-            row["root_cause"]          = field_value(fields.get("customfield_12081")) or None
-            row["environment"]         = field_value(fields.get("customfield_12589")) or None
-            row["discovered_in_phase"] = field_value(fields.get("customfield_12017")) or None
+            row["root_cause"] = field_value(fields.get("customfield_12081")) or None
+            row["environment"] = field_value(fields.get("customfield_12589")) or None
+            row["discovered_in_phase"] = (
+                field_value(fields.get("customfield_12017")) or None
+            )
 
         rows.append(row)
 

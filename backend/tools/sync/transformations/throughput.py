@@ -26,7 +26,8 @@ present in the silver layer, so their completions will not appear here.
 """
 
 from collections import defaultdict
-from transformations._lib import parse_dt, status_transitions, first_terminal
+
+from transformations._lib import first_terminal, parse_dt, status_transitions
 
 OUTPUT = "data/gold/throughput.csv"
 FIELDS = ["query", "project", "type", "count", "avg_story_points"]
@@ -34,16 +35,16 @@ FIELDS = ["query", "project", "type", "count", "avg_story_points"]
 
 def transform(issues: list) -> list:
     # (month, project, type) → set of issue keys (dedup within same bucket)
-    keys_by_bucket  = defaultdict(set)
+    keys_by_bucket = defaultdict(set)
     # (month, project, type) → list of story-point values
-    sp_by_bucket    = defaultdict(list)
+    sp_by_bucket = defaultdict(list)
 
     for issue in issues:
-        key    = issue.get("key", "")
+        key = issue.get("key", "")
         fields = issue.get("fields", {})
-        project = (fields.get("project")   or {}).get("key",  "")
-        itype   = (fields.get("issuetype") or {}).get("name", "")
-        sp      = fields.get("customfield_10005")
+        project = (fields.get("project") or {}).get("key", "")
+        itype = (fields.get("issuetype") or {}).get("name", "")
+        sp = fields.get("customfield_10005")
 
         transitions = status_transitions(issue)
 
@@ -66,12 +67,14 @@ def transform(issues: list) -> list:
     rows = []
     for (month, project, itype), keys in sorted(keys_by_bucket.items()):
         sp_list = sp_by_bucket[(month, project, itype)]
-        avg_sp  = round(sum(sp_list) / len(sp_list), 2) if sp_list else 0.0
-        rows.append({
-            "query":            month,
-            "project":          project,
-            "type":             itype,
-            "count":            len(keys),
-            "avg_story_points": f"{avg_sp:.2f}",
-        })
+        avg_sp = round(sum(sp_list) / len(sp_list), 2) if sp_list else 0.0
+        rows.append(
+            {
+                "query": month,
+                "project": project,
+                "type": itype,
+                "count": len(keys),
+                "avg_story_points": f"{avg_sp:.2f}",
+            }
+        )
     return rows

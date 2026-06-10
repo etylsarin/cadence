@@ -13,7 +13,16 @@ Monte Carlo), so widening here does not change their behavior.
 from transformations.completed_tickets import build_rows
 
 OUTPUT = "data/gold/completed_tickets_all.csv"
-FIELDS = ["completed_date", "issue", "project", "type", "story_points", "cycle_time_days", "fix_version_ids", "fix_version_names"]
+FIELDS = [
+    "completed_date",
+    "issue",
+    "project",
+    "type",
+    "story_points",
+    "cycle_time_days",
+    "fix_version_ids",
+    "fix_version_names",
+]
 
 
 def transform(issues: list) -> list:

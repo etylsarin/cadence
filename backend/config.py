@@ -16,6 +16,7 @@ _ROOT = Path(__file__).resolve().parent.parent
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+
 def _parse_env_file(path: Path) -> dict:
     """Parse a .env-style file.
 
@@ -44,9 +45,9 @@ def _parse_env_file(path: Path) -> dict:
 
 _app_cfg = _parse_env_file(_ROOT / "config.env")
 
-PROJECTS           = [p.strip() for p in _app_cfg.get("PROJECTS", "").split(",") if p.strip()]
+PROJECTS = [p.strip() for p in _app_cfg.get("PROJECTS", "").split(",") if p.strip()]
 SYNC_ISSUE_TYPES = _app_cfg.get("SYNC_ISSUE_TYPES", "Story,Spike,Bug,Task,Epic")
-SYNC_START_DATE  = _app_cfg.get("SYNC_START_DATE", "2024-01-01")
+SYNC_START_DATE = _app_cfg.get("SYNC_START_DATE", "2024-01-01")
 
 
 def _parse_tools(cfg: dict) -> list:
@@ -60,11 +61,13 @@ def _parse_tools(cfg: dict) -> list:
     for entry in cfg.get("TOOLS", []):
         parts = [p.strip() for p in entry.split("|", 2)]
         if len(parts) >= 2:
-            tools.append({
-                "id":   parts[0],
-                "name": parts[1],
-                "desc": parts[2] if len(parts) > 2 else "",
-            })
+            tools.append(
+                {
+                    "id": parts[0],
+                    "name": parts[1],
+                    "desc": parts[2] if len(parts) > 2 else "",
+                }
+            )
     return tools
 
 
@@ -73,10 +76,16 @@ TOOLS = _parse_tools(_app_cfg)
 _local_env = _parse_env_file(_ROOT / ".env")
 
 # Non-secret Jira base URL — readable from config.env, env var, or .env as fallback.
-JIRA_URL = _app_cfg.get("JIRA_URL") or os.environ.get("JIRA_URL") or _local_env.get("JIRA_URL", "")
+JIRA_URL = (
+    _app_cfg.get("JIRA_URL")
+    or os.environ.get("JIRA_URL")
+    or _local_env.get("JIRA_URL", "")
+)
 
 # CORS allowed origins — comma-separated list in config.env.
-ALLOWED_ORIGINS = [o.strip() for o in _app_cfg.get("ALLOWED_ORIGINS", "").split(",") if o.strip()]
+ALLOWED_ORIGINS = [
+    o.strip() for o in _app_cfg.get("ALLOWED_ORIGINS", "").split(",") if o.strip()
+]
 
 # ── App authentication (login page, optional) ─────────────────────────────────
 # Secrets — read from env vars (production) or .env (local). When BOTH
@@ -96,9 +105,11 @@ SESSION_SECRET = (os.environ.get("CADENCE_SESSION_SECRET")
 
 # ── Input validators ──────────────────────────────────────────────────────────
 
+
 def validate_numeric_id(value: str, name: str = "id") -> str:
     """Raise HTTP 400 if value is not a plain integer string (Jira version/sprint ID)."""
     from fastapi import HTTPException
+
     if not _re.fullmatch(r"\d+", str(value)):
         raise HTTPException(status_code=400, detail=f"Invalid {name}")
     return value
@@ -107,12 +118,14 @@ def validate_numeric_id(value: str, name: str = "id") -> str:
 def validate_project(value: str) -> str:
     """Raise HTTP 400 if value is not a known project key."""
     from fastapi import HTTPException
+
     if value not in PROJECTS:
         raise HTTPException(status_code=400, detail=f"Unknown project: {value!r}")
     return value
 
 
 # ── Secrets (.env or environment variables) ───────────────────────────────────
+
 
 def load_config() -> dict:
     """Load secrets from .env (local dev) or environment variables (production)."""
@@ -122,11 +135,13 @@ def load_config() -> dict:
         return os.environ.get(key) or env.get(key, "")
 
     return {
-        "JIRA_URL":          _get("JIRA_URL"),
-        "JIRA_EMAIL":        _get("JIRA_EMAIL"),
-        "API_TOKEN":         _get("JIRA_API_TOKEN"),
+        "JIRA_URL": _get("JIRA_URL"),
+        "JIRA_EMAIL": _get("JIRA_EMAIL"),
+        "API_TOKEN": _get("JIRA_API_TOKEN"),
         "ANTHROPIC_API_KEY": _get("ANTHROPIC_API_KEY"),
-        "OPENAI_API_KEY":    _get("OPENAI_API_KEY"),
-        "AI_PROVIDER":       _get("AI_PROVIDER"),   # "anthropic" | "openai" (auto-detected if blank)
-        "AI_MODEL":          _get("AI_MODEL"),       # overrides per-provider default if set
+        "OPENAI_API_KEY": _get("OPENAI_API_KEY"),
+        "AI_PROVIDER": _get(
+            "AI_PROVIDER"
+        ),  # "anthropic" | "openai" (auto-detected if blank)
+        "AI_MODEL": _get("AI_MODEL"),  # overrides per-provider default if set
     }

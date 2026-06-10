@@ -16,6 +16,8 @@ import os
 import secrets
 import time
 
+import mirror
+from config import ALLOWED_ORIGINS, AUTH_PASSWORD, AUTH_USER, JIRA_URL, PROJECTS, TOOLS
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -161,10 +163,10 @@ def api_accessible_tools():
 
 
 # ── API routers ─────────────────────────────────────────────────────────────────
-app.include_router(rn_router,      prefix="/release-notes")
-app.include_router(ss_router,      prefix="/sprint-summary")
-app.include_router(sync_router,  prefix="/sync")
-app.include_router(ask_router,     prefix="/ask")
+app.include_router(rn_router, prefix="/release-notes")
+app.include_router(ss_router, prefix="/sprint-summary")
+app.include_router(sync_router, prefix="/sync")
+app.include_router(ask_router, prefix="/ask")
 app.include_router(planner_router, prefix="/planner")
 app.include_router(pb_router,      prefix="/prompt-builder")
 app.include_router(fm_router,      prefix="/flow-metrics")

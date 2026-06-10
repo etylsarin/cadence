@@ -13,18 +13,17 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
+from config import PROJECTS, SYNC_ISSUE_TYPES, SYNC_START_DATE, load_config
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 from fastapi.responses import PlainTextResponse
-
-from config import load_config, PROJECTS, SYNC_ISSUE_TYPES, SYNC_START_DATE
 
 router = APIRouter()
 
 SYNC_DIR = Path(__file__).parent.resolve()
-DATA_DIR   = SYNC_DIR.parent.parent / "data"
+DATA_DIR = SYNC_DIR.parent.parent / "data"
 
 # ── In-memory sync state ──────────────────────────────────────────────────────
-_sync_lock  = threading.Lock()
+_sync_lock = threading.Lock()
 _sync_state: dict = {"running": False, "started_at": None}
 
 
@@ -39,7 +38,9 @@ def _csv_stats() -> dict:
         try:
             with open(path, newline="", encoding="utf-8") as f:
                 rows = list(csv.DictReader(f))
-            mtime = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc).isoformat()
+            mtime = datetime.fromtimestamp(
+                path.stat().st_mtime, tz=timezone.utc
+            ).isoformat()
             stats[name] = {"rows": len(rows), "updated_at": mtime}
         except Exception:
             stats[name] = {"rows": None, "updated_at": None}
@@ -57,16 +58,18 @@ def _last_sync() -> Optional[str]:
 
 def _count_bronze() -> Optional[int]:
     try:
-        return sum(1 for f in (DATA_DIR / "bronze").iterdir()
-                   if f.suffix == ".json" and not f.stem.endswith(".meta"))
+        return sum(
+            1
+            for f in (DATA_DIR / "bronze").iterdir()
+            if f.suffix == ".json" and not f.stem.endswith(".meta")
+        )
     except Exception:
         return None
 
 
 def _count_silver() -> Optional[int]:
     try:
-        return sum(1 for f in (DATA_DIR / "silver").iterdir()
-                   if f.suffix == ".json")
+        return sum(1 for f in (DATA_DIR / "silver").iterdir() if f.suffix == ".json")
     except Exception:
         return None
 
@@ -87,7 +90,7 @@ def _parse_log_summary(path: Path) -> dict:
                     if len(ts) > 1:
                         result["started_at"] = ts[1].strip()
                 elif is_pipeline and line.startswith("Stages: "):
-                    result["stages"] = line.strip()[len("Stages: "):]
+                    result["stages"] = line.strip()[len("Stages: ") :]
                 elif is_pipeline and "  finished=" in line and "  exit=" in line:
                     # "[bronze→silver]  finished=...  exit=0"
                     label = line.strip().split("]")[0].lstrip("[")
@@ -121,14 +124,14 @@ def _list_logs() -> list:
     try:
         for f in sorted(logs_dir.glob("*.log"), reverse=True)[:30]:
             summary = _parse_log_summary(f)
-            m = re.match(r'^(\d{4}-\d{2}-\d{2})T(\d{2})-(\d{2})-(\d{2})Z\.log$', f.name)
+            m = re.match(r"^(\d{4}-\d{2}-\d{2})T(\d{2})-(\d{2})-(\d{2})Z\.log$", f.name)
             if m:
                 try:
                     start = datetime.fromisoformat(
                         f"{m.group(1)}T{m.group(2)}:{m.group(3)}:{m.group(4)}+00:00"
                     )
                     end = datetime.fromtimestamp(f.stat().st_mtime, tz=timezone.utc)
-                    summary['duration_s'] = int((end - start).total_seconds())
+                    summary["duration_s"] = int((end - start).total_seconds())
                 except Exception:
                     pass
             result.append({"name": f.name, "summary": summary})
@@ -145,31 +148,32 @@ def _run_sync(force: bool = False):
         subprocess.run(cmd, cwd=str(SYNC_DIR), capture_output=True)
     finally:
         with _sync_lock:
-            _sync_state["running"]    = False
+            _sync_state["running"] = False
             _sync_state["started_at"] = None
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
 
+
 @router.get("/api/status")
 def api_status():
     with _sync_lock:
-        running    = _sync_state["running"]
+        running = _sync_state["running"]
         started_at = _sync_state["started_at"]
 
     secrets = load_config()
     return {
-        "running":      running,
-        "started_at":   started_at,
-        "last_sync":    _last_sync(),
+        "running": running,
+        "started_at": started_at,
+        "last_sync": _last_sync(),
         "bronze_count": _count_bronze(),
         "silver_count": _count_silver(),
-        "csv_stats":    _csv_stats(),
+        "csv_stats": _csv_stats(),
         "config": {
-            "jira_url":    secrets.get("JIRA_URL"),
-            "projects":    ", ".join(PROJECTS),
+            "jira_url": secrets.get("JIRA_URL"),
+            "projects": ", ".join(PROJECTS),
             "issue_types": SYNC_ISSUE_TYPES,
-            "start_date":  SYNC_START_DATE,
+            "start_date": SYNC_START_DATE,
         },
     }
 
@@ -182,6 +186,7 @@ def api_logs():
 @router.get("/api/transformations")
 def api_transformations():
     import ast as _ast
+
     trans_dir = SYNC_DIR / "transformations"
     result = []
     for path in sorted(trans_dir.glob("*.py")):
@@ -210,18 +215,29 @@ def api_transformations():
             if output_rel:
                 out_path = DATA_DIR.parent / output_rel
                 try:
-                    mtime = datetime.fromtimestamp(out_path.stat().st_mtime, tz=timezone.utc).isoformat()
+                    mtime = datetime.fromtimestamp(
+                        out_path.stat().st_mtime, tz=timezone.utc
+                    ).isoformat()
                     updated_at = mtime
                     if output_rel.endswith(".jsonl"):
                         rows = sum(1 for l in out_path.open() if l.strip())
                     else:
                         import csv as _csv
+
                         with open(out_path, newline="") as f:
                             rows = sum(1 for _ in _csv.reader(f)) - 1
                 except Exception:
                     pass
-            result.append({"id": path.stem, "name": name, "description": desc,
-                           "output": output_rel, "rows": rows, "updated_at": updated_at})
+            result.append(
+                {
+                    "id": path.stem,
+                    "name": name,
+                    "description": desc,
+                    "output": output_rel,
+                    "rows": rows,
+                    "updated_at": updated_at,
+                }
+            )
         except Exception:
             continue
     return result
@@ -242,7 +258,7 @@ def api_sync(background_tasks: BackgroundTasks, force: bool = False):
     with _sync_lock:
         if _sync_state["running"]:
             raise HTTPException(status_code=409, detail="Sync already running")
-        _sync_state["running"]    = True
+        _sync_state["running"] = True
         _sync_state["started_at"] = datetime.now(timezone.utc).isoformat()
     background_tasks.add_task(_run_sync, force)
     return {"started": True}

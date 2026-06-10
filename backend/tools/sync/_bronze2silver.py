@@ -27,7 +27,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).parent
-DATA_DIR   = SCRIPT_DIR.parent.parent / "data"
+DATA_DIR = SCRIPT_DIR.parent.parent / "data"
 BRONZE_DIR = DATA_DIR / "bronze"
 SILVER_DIR = DATA_DIR / "silver"
 
@@ -82,26 +82,34 @@ def strip_bulk_migrations(doc: dict) -> dict:
     histories = changelog.get("histories", [])
     cleaned = []
     for h in histories:
-        date = h.get("created", "")[:10]          # "YYYY-MM-DD"
+        date = h.get("created", "")[:10]  # "YYYY-MM-DD"
         author_id = (h.get("author") or {}).get("accountId", "")
         keep = True
         for item in h.get("items", []):
             if item.get("field") == "status":
-                sig = (project_key, date,
-                       item.get("fromString", ""),
-                       item.get("toString", ""),
-                       author_id)
+                sig = (
+                    project_key,
+                    date,
+                    item.get("fromString", ""),
+                    item.get("toString", ""),
+                    author_id,
+                )
                 if sig in _BULK_SIG:
                     keep = False
-                    _SANIT_COUNTS[(project_key, date,
-                                   item.get("fromString", ""),
-                                   item.get("toString", ""))] += 1
+                    _SANIT_COUNTS[
+                        (
+                            project_key,
+                            date,
+                            item.get("fromString", ""),
+                            item.get("toString", ""),
+                        )
+                    ] += 1
                     break
         if keep:
             cleaned.append(h)
 
     if len(cleaned) == len(histories):
-        return doc   # nothing removed — return unchanged to avoid a copy
+        return doc  # nothing removed — return unchanged to avoid a copy
 
     new_changelog = dict(changelog)
     new_changelog["histories"] = cleaned
@@ -114,6 +122,7 @@ def strip_bulk_migrations(doc: dict) -> dict:
 
 
 # ── Field cleaning ────────────────────────────────────────────────────────────
+
 
 # A person object is identified by having accountId
 def is_person(obj: dict) -> bool:
@@ -159,13 +168,15 @@ def process_file(bronze_path: Path, silver_path: Path) -> str:
 
 # ── Result + summary ──────────────────────────────────────────────────────────
 
+
 @dataclass
 class Bronze2SilverResult:
     """Structured outcome of a bronze→silver run."""
+
     written: int = 0
     skipped: int = 0
     errors: int = 0
-    sanitized: int = 0   # bulk-migration changelog entries removed
+    sanitized: int = 0  # bulk-migration changelog entries removed
 
 
 def _print_sanit_summary():
@@ -179,6 +190,7 @@ def _print_sanit_summary():
 
 
 # ── Orchestration ─────────────────────────────────────────────────────────────
+
 
 def run(force: bool = False, key: str | None = None) -> Bronze2SilverResult:
     """Process bronze → silver and return a structured result.
@@ -231,19 +243,29 @@ def run(force: bool = False, key: str | None = None) -> Bronze2SilverResult:
 
     print(f"done written={written} skipped={skipped} errors={errors}")
     _print_sanit_summary()
-    return Bronze2SilverResult(written=written, skipped=skipped, errors=errors,
-                               sanitized=sum(_SANIT_COUNTS.values()))
+    return Bronze2SilverResult(
+        written=written,
+        skipped=skipped,
+        errors=errors,
+        sanitized=sum(_SANIT_COUNTS.values()),
+    )
 
 
 # ── CLI ───────────────────────────────────────────────────────────────────────
 
+
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--force", action="store_true",
-                        help="reprocess all files even if silver is newer")
-    parser.add_argument("--key", metavar="KEY",
-                        help="process a single ticket key (e.g. PROJ-42)")
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="reprocess all files even if silver is newer",
+    )
+    parser.add_argument(
+        "--key", metavar="KEY", help="process a single ticket key (e.g. PROJ-42)"
+    )
     args = parser.parse_args()
     result = run(force=args.force, key=args.key)
     return 0 if result.errors == 0 else 1

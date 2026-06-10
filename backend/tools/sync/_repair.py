@@ -17,13 +17,14 @@ from dataclasses import dataclass
 from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-DATA_DIR   = SCRIPT_DIR.parent.parent / "data"
-CACHE_DIR  = DATA_DIR / "bronze"
+DATA_DIR = SCRIPT_DIR.parent.parent / "data"
+CACHE_DIR = DATA_DIR / "bronze"
 
 
 @dataclass
 class RepairResult:
     """Structured outcome of a repair run."""
+
     fixed: int = 0
     dry_run: bool = True
 
@@ -35,8 +36,10 @@ def write_atomic(path: Path, text: str):
 
 
 def has_synthetic(doc: dict) -> bool:
-    return any((h.get("_sync") or {}).get("synthetic")
-               for h in (doc.get("changelog") or {}).get("histories", []))
+    return any(
+        (h.get("_sync") or {}).get("synthetic")
+        for h in (doc.get("changelog") or {}).get("histories", [])
+    )
 
 
 def run(apply: bool = False) -> RepairResult:
@@ -73,7 +76,8 @@ def run(apply: bool = False) -> RepairResult:
         # Strip all synthetic entries from the changelog.
         if doc is not None and synthetic:
             doc["changelog"]["histories"] = [
-                h for h in doc["changelog"]["histories"]
+                h
+                for h in doc["changelog"]["histories"]
                 if not (h.get("_sync") or {}).get("synthetic")
             ]
             write_atomic(json_file, json.dumps(doc))
@@ -93,9 +97,11 @@ def run(apply: bool = False) -> RepairResult:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--apply", action="store_true",
-                        help="apply the repairs (default is a dry run)")
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument(
+        "--apply", action="store_true", help="apply the repairs (default is a dry run)"
+    )
     args = parser.parse_args()
     run(apply=args.apply)
     return 0

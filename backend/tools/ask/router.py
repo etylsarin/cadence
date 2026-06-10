@@ -15,6 +15,7 @@ from typing import Optional
 
 import agent as _agent
 import ai as _ai
+from config import PROJECTS, load_config
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -41,6 +42,7 @@ _MAX_TICKETS = 1200
 
 
 # ── Data loading ───────────────────────────────────────────────────────────────
+
 
 def _load_tickets() -> list:
     global _tickets, _tickets_cached_at
@@ -74,6 +76,7 @@ def _filter_tickets(tickets: list, project: str, months: int) -> list:
 
 # ── Context formatting ─────────────────────────────────────────────────────────
 
+
 def _format_ticket(t: dict) -> str:
     parts = [f"[{t.get('key', '')}]", t.get("type", "")]
 
@@ -96,7 +99,7 @@ def _format_ticket(t: dict) -> str:
     if t.get("sprint"):
         parts.append(f"[{t['sprint'][:28]}]")
 
-    created  = t.get("created", "")
+    created = t.get("created", "")
     resolved = t.get("resolved")
     if created:
         parts.append(created + (f"→{resolved}" if resolved else ""))
@@ -116,9 +119,9 @@ def _format_ticket(t: dict) -> str:
     if t.get("description"):
         extras.append(f'note:"{t["description"][:120]}"')
     if t.get("root_cause"):
-        extras.append(f'root_cause:{t["root_cause"]}')
+        extras.append(f"root_cause:{t['root_cause']}")
     if t.get("environment"):
-        extras.append(f'env:{t["environment"]}')
+        extras.append(f"env:{t['environment']}")
     if extras:
         line += "\n  " + "  ".join(extras)
 
@@ -152,6 +155,7 @@ TICKET DATA:
 
 # ── AI streaming ───────────────────────────────────────────────────────────────
 
+
 def _stream_ai(config: dict, system_prompt: str, question: str):
     """Sync generator — yields raw text chunks from the AI streaming API."""
     yield from _ai.stream(
@@ -163,6 +167,7 @@ def _stream_ai(config: dict, system_prompt: str, question: str):
 
 
 # ── Endpoints ──────────────────────────────────────────────────────────────────
+
 
 class ChatRequest(BaseModel):
     question: str
@@ -182,9 +187,11 @@ def chat(body: ChatRequest):
 
     all_tickets = _load_tickets()
     if not all_tickets:
-        raise HTTPException(503, "chat_tickets.jsonl not found — run the Sync pipeline first")
+        raise HTTPException(
+            503, "chat_tickets.jsonl not found — run the Sync pipeline first"
+        )
 
-    filtered  = _filter_tickets(all_tickets, body.project, body.months)
+    filtered = _filter_tickets(all_tickets, body.project, body.months)
     if not filtered:
         raise HTTPException(400, "No tickets match the selected filters")
 

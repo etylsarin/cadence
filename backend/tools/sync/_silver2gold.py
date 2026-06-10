@@ -26,14 +26,14 @@ import importlib
 import json
 import sys
 from dataclasses import dataclass, field
-from pathlib import Path
 from multiprocessing.pool import ThreadPool
+from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).parent
-REPO_ROOT  = SCRIPT_DIR.parent.parent
-DATA_DIR   = REPO_ROOT / "data"
+REPO_ROOT = SCRIPT_DIR.parent.parent
+DATA_DIR = REPO_ROOT / "data"
 SILVER_DIR = DATA_DIR / "silver"
-TRANS_DIR  = SCRIPT_DIR / "transformations"
+TRANS_DIR = SCRIPT_DIR / "transformations"
 
 # Make the transformations/ package importable regardless of the caller's cwd
 # (subprocess runs with cwd=SCRIPT_DIR, but in-process callers may not).
@@ -43,16 +43,18 @@ sys.path.insert(0, str(SCRIPT_DIR))
 @dataclass
 class Silver2GoldResult:
     """Structured outcome of a silver→gold run."""
+
     loaded: int = 0
     succeeded: list = field(default_factory=list)
     failed: list = field(default_factory=list)
-    ran: bool = True   # False when no transformations were discovered
+    ran: bool = True  # False when no transformations were discovered
 
 
 # ── Silver loader ─────────────────────────────────────────────────────────────
 
+
 def load_silver() -> list:
-    files  = sorted(SILVER_DIR.glob("*.json"))
+    files = sorted(SILVER_DIR.glob("*.json"))
     issues = []
     errors = 0
     for f in files:
@@ -67,6 +69,7 @@ def load_silver() -> list:
 
 
 # ── Writers ───────────────────────────────────────────────────────────────────
+
 
 def write_csv(path: Path, rows: list, fieldnames: list):
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -91,12 +94,10 @@ def write_jsonl(path: Path, rows: list):
 
 # ── Transformation discovery ──────────────────────────────────────────────────
 
+
 def discover_transformations() -> list:
     """Return sorted list of transformation module names (no .py, no _prefix)."""
-    return sorted(
-        p.stem for p in TRANS_DIR.glob("*.py")
-        if not p.stem.startswith("_")
-    )
+    return sorted(p.stem for p in TRANS_DIR.glob("*.py") if not p.stem.startswith("_"))
 
 
 def load_transformation(name: str):
@@ -113,13 +114,14 @@ def load_transformation(name: str):
 
 # ── Parallel transformation runner ────────────────────────────────────────────
 
+
 def run_transformation(args_tuple):
     """Run a single transformation (for use with ThreadPool).
     Returns (name, success: bool, message: str)
     """
     name, issues = args_tuple
     try:
-        mod  = load_transformation(name)
+        mod = load_transformation(name)
         rows = mod.transform(issues)
         output_path = REPO_ROOT / mod.OUTPUT
         if mod.OUTPUT.endswith(".jsonl"):
@@ -132,6 +134,7 @@ def run_transformation(args_tuple):
 
 
 # ── Orchestration ─────────────────────────────────────────────────────────────
+
 
 def run(names: list | None = None) -> Silver2GoldResult:
     """Run silver→gold transformations and return a structured result.
@@ -170,11 +173,17 @@ def run(names: list | None = None) -> Silver2GoldResult:
 
 # ── CLI ───────────────────────────────────────────────────────────────────────
 
+
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("transformations", nargs="*", metavar="NAME",
-                        help="transformation(s) to run (default: all)")
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument(
+        "transformations",
+        nargs="*",
+        metavar="NAME",
+        help="transformation(s) to run (default: all)",
+    )
     args = parser.parse_args()
     result = run(args.transformations or None)
     return 0 if (result.ran and not result.failed) else 1

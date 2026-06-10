@@ -37,16 +37,31 @@ transitions_steps   Total number of status transitions
 """
 
 from transformations._lib import (
-    field_value, format_local, status_transitions,
-    first_terminal, format_transitions, time_to_fix_days,
+    field_value,
+    first_terminal,
+    format_local,
+    format_transitions,
     parse_dt,
+    status_transitions,
+    time_to_fix_days,
 )
 
 OUTPUT = "data/gold/escaped_defects.csv"
 FIELDS = [
-    "query", "issue", "project", "type", "story_points", "priority",
-    "current_status", "created", "time_to_fix_days", "environment",
-    "discovered_in_phase", "root_cause", "transitions", "transitions_steps",
+    "query",
+    "issue",
+    "project",
+    "type",
+    "story_points",
+    "priority",
+    "current_status",
+    "created",
+    "time_to_fix_days",
+    "environment",
+    "discovered_in_phase",
+    "root_cause",
+    "transitions",
+    "transitions_steps",
 ]
 
 
@@ -66,34 +81,38 @@ def transform(issues: list) -> list:
             continue
 
         created_iso = fields.get("created", "")
-        created_dt  = parse_dt(created_iso)
-        query       = created_dt.strftime("%Y-%m") if created_dt else ""
+        created_dt = parse_dt(created_iso)
+        query = created_dt.strftime("%Y-%m") if created_dt else ""
 
         transitions = status_transitions(issue)
-        terminal_t  = first_terminal(transitions)
-        ttf         = time_to_fix_days(created_iso, terminal_t)
+        terminal_t = first_terminal(transitions)
+        ttf = time_to_fix_days(created_iso, terminal_t)
 
         trans_str, trans_count = format_transitions(transitions)
 
         sp = fields.get("customfield_10005")
         priority = fields.get("priority")
 
-        rows.append({
-            "query":              query,
-            "issue":              issue.get("key", ""),
-            "project":            (fields.get("project")   or {}).get("key",  ""),
-            "type":               (fields.get("issuetype") or {}).get("name", ""),
-            "story_points":       f"{float(sp):.1f}" if sp is not None else "",
-            "priority":           priority.get("name", "") if isinstance(priority, dict) else "",
-            "current_status":     (fields.get("status") or {}).get("name", ""),
-            "created":            format_local(created_iso),
-            "time_to_fix_days":   f"{ttf:.2f}" if ttf is not None else "",
-            "environment":        env_str,
-            "discovered_in_phase": dip_str,
-            "root_cause":         field_value(fields.get("customfield_12081")),
-            "transitions":        trans_str,
-            "transitions_steps":  trans_count,
-        })
+        rows.append(
+            {
+                "query": query,
+                "issue": issue.get("key", ""),
+                "project": (fields.get("project") or {}).get("key", ""),
+                "type": (fields.get("issuetype") or {}).get("name", ""),
+                "story_points": f"{float(sp):.1f}" if sp is not None else "",
+                "priority": priority.get("name", "")
+                if isinstance(priority, dict)
+                else "",
+                "current_status": (fields.get("status") or {}).get("name", ""),
+                "created": format_local(created_iso),
+                "time_to_fix_days": f"{ttf:.2f}" if ttf is not None else "",
+                "environment": env_str,
+                "discovered_in_phase": dip_str,
+                "root_cause": field_value(fields.get("customfield_12081")),
+                "transitions": trans_str,
+                "transitions_steps": trans_count,
+            }
+        )
 
     rows.sort(key=lambda r: (r["query"], r["issue"]))
     return rows

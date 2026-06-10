@@ -73,17 +73,18 @@ from pathlib import Path
 
 from transformations._lib import (
     TERMINAL_STATUSES,
+    first_terminal,
     format_local,
     format_transitions,
     parse_dt,
     status_transitions,
-    first_terminal,
 )
 
 # ── Status config ─────────────────────────────────────────────────────────────
 
-_CONFIG_PATH   = Path(__file__).parent.parent / "data" / "gold" / "flow_config.json"
-_DEFAULT_PATH  = Path(__file__).parent.parent / "flow_config_default.json"
+_CONFIG_PATH = Path(__file__).parent.parent / "data" / "gold" / "flow_config.json"
+_DEFAULT_PATH = Path(__file__).parent.parent / "flow_config_default.json"
+
 
 def _load_status_config() -> dict:
     """Load user config, falling back to the shared default so new syncs don't wipe assignments."""
@@ -96,14 +97,25 @@ def _load_status_config() -> dict:
             return json.load(_f)
     return {}
 
+
 _STATUS_CONFIG = _load_status_config()
 
 STATUS_COLUMNS = sorted(_STATUS_CONFIG.keys())
 
 OUTPUT = "data/gold/flow_metrics.csv"
 _BASE_FIELDS = [
-    "query", "issue", "project", "type", "story_points", "priority",
-    "current_status", "created", "Steps", "Path", "transitions_steps", "transitions",
+    "query",
+    "issue",
+    "project",
+    "type",
+    "story_points",
+    "priority",
+    "current_status",
+    "created",
+    "Steps",
+    "Path",
+    "transitions_steps",
+    "transitions",
 ]
 FIELDS = _BASE_FIELDS + STATUS_COLUMNS
 
@@ -111,6 +123,7 @@ FIELDS = _BASE_FIELDS + STATUS_COLUMNS
 FLOW_ISSUE_TYPES = {"Story", "Bug"}
 
 # ── Core calculation ──────────────────────────────────────────────────────────
+
 
 def _time_in_status(created_iso: str, transitions: list) -> dict:
     """
@@ -129,16 +142,16 @@ def _time_in_status(created_iso: str, transitions: list) -> dict:
     # ── Initial status: from issue creation to first recorded transition ──────
     initial_status = transitions[0]["from"]
     t_created = parse_dt(created_iso)
-    t_first   = parse_dt(transitions[0]["created"])
+    t_first = parse_dt(transitions[0]["created"])
     if t_created and t_first:
         delta = (t_first - t_created).total_seconds() / 86400
-        times[initial_status] += max(delta, 0.0)   # clamp negatives
+        times[initial_status] += max(delta, 0.0)  # clamp negatives
 
     # ── Intermediate statuses: between consecutive transitions ────────────────
     for i in range(len(transitions) - 1):
-        status  = transitions[i]["to"]
+        status = transitions[i]["to"]
         t_enter = parse_dt(transitions[i]["created"])
-        t_exit  = parse_dt(transitions[i + 1]["created"])
+        t_exit = parse_dt(transitions[i + 1]["created"])
         if t_enter and t_exit:
             delta = (t_exit - t_enter).total_seconds() / 86400
             times[status] += max(delta, 0.0)
@@ -150,7 +163,7 @@ def _time_in_status(created_iso: str, transitions: list) -> dict:
     final_status = transitions[-1]["to"]
     t_last = parse_dt(transitions[-1]["created"])
     if t_last:
-        now   = datetime.now(timezone.utc)
+        now = datetime.now(timezone.utc)
         delta = (now - t_last).total_seconds() / 86400
         times[final_status] += max(delta, 0.0)
     elif final_status not in times:
@@ -166,72 +179,79 @@ def _fmt_time(days: float) -> str:
 
 # ── Transformation ────────────────────────────────────────────────────────────
 
+
 def transform(issues: list) -> list:
     # ── Discover statuses not yet in flow_config.json ─────────────────────────
     seen: set = set()
     for issue in issues:
         for t in status_transitions(issue):
-            if t["from"]: seen.add(t["from"])
-            if t["to"]:   seen.add(t["to"])
+            if t["from"]:
+                seen.add(t["from"])
+            if t["to"]:
+                seen.add(t["to"])
 
     new_statuses = sorted(seen - set(_STATUS_CONFIG.keys()))
     if new_statuses:
         for s in new_statuses:
-            _STATUS_CONFIG[s] = ""          # "" = unassigned in Cadence
+            _STATUS_CONFIG[s] = ""  # "" = unassigned in Cadence
         STATUS_COLUMNS[:] = sorted(_STATUS_CONFIG.keys())
         FIELDS[:] = _BASE_FIELDS + STATUS_COLUMNS
         tmp = _CONFIG_PATH.with_suffix(".json.tmp")
         with open(tmp, "w") as _f:
             json.dump(_STATUS_CONFIG, _f, indent=2, sort_keys=True)
         tmp.rename(_CONFIG_PATH)
-        print(f"  flow_config.json: added {len(new_statuses)} new status(es): {', '.join(new_statuses)}")
+        print(
+            f"  flow_config.json: added {len(new_statuses)} new status(es): {', '.join(new_statuses)}"
+        )
 
     rows = []
 
     for issue in issues:
-        fields      = issue.get("fields", {})
-        issue_type  = (fields.get("issuetype") or {}).get("name", "")
+        fields = issue.get("fields", {})
+        issue_type = (fields.get("issuetype") or {}).get("name", "")
 
         if issue_type not in FLOW_ISSUE_TYPES:
-            continue   # only Story and Bug contribute to flow metrics
+            continue  # only Story and Bug contribute to flow metrics
 
         transitions = status_transitions(issue)
-        terminal_t  = first_terminal(transitions)
+        terminal_t = first_terminal(transitions)
 
         if not terminal_t:
-            continue   # issue never reached a terminal status
+            continue  # issue never reached a terminal status
 
         terminal_dt = parse_dt(terminal_t["created"])
         if not terminal_dt:
             continue
 
-        query       = terminal_dt.strftime("%Y-%m")
+        query = terminal_dt.strftime("%Y-%m")
         created_iso = fields.get("created", "")
-        time_map    = _time_in_status(created_iso, transitions)
+        time_map = _time_in_status(created_iso, transitions)
 
         # Path: initial state followed by every "to" state in order
-        path = " -> ".join(
-            [transitions[0]["from"]] + [t["to"] for t in transitions]
-        ) if transitions else ""
+        path = (
+            " -> ".join([transitions[0]["from"]] + [t["to"] for t in transitions])
+            if transitions
+            else ""
+        )
 
         trans_str, trans_count = format_transitions(transitions)
 
-        sp       = fields.get("customfield_10005")
+        sp = fields.get("customfield_10005")
         priority = fields.get("priority")
 
         row = {
-            "query":             query,
-            "issue":             issue.get("key", ""),
-            "project":           (fields.get("project")   or {}).get("key",  ""),
-            "type":              (fields.get("issuetype") or {}).get("name", ""),
-            "story_points":      f"{float(sp):.1f}" if sp is not None else "",
-            "priority":          priority.get("name", "") if isinstance(priority, dict) else "",
-            "current_status":    (fields.get("status") or {}).get("name", ""),
-            "created":           format_local(created_iso),
-            "Steps":             trans_count,
-            "Path":              path,
+            "query": query,
+            "issue": issue.get("key", ""),
+            "project": (fields.get("project") or {}).get("key", ""),
+            "type": (fields.get("issuetype") or {}).get("name", ""),
+            "story_points": f"{float(sp):.1f}" if sp is not None else "",
+            "priority": priority.get("name", "") if isinstance(priority, dict) else "",
+            "current_status": (fields.get("status") or {}).get("name", ""),
+            "created": format_local(created_iso),
+            "Steps": trans_count,
+            "Path": path,
             "transitions_steps": trans_count,
-            "transitions":       trans_str,
+            "transitions": trans_str,
         }
 
         for status in STATUS_COLUMNS:

@@ -37,12 +37,28 @@ mirrors the same logic used by throughput.py.
 
 from typing import Optional
 
-from transformations._lib import dlt_days, field_value, load_flow_status_map, parse_dt, status_transitions, first_terminal
+from transformations._lib import (
+    dlt_days,
+    field_value,
+    first_terminal,
+    load_flow_status_map,
+    parse_dt,
+    status_transitions,
+)
 
 FLOW_ISSUE_TYPES = {"Story", "Bug"}
 
 OUTPUT = "data/gold/completed_tickets.csv"
-FIELDS = ["completed_date", "issue", "project", "type", "story_points", "cycle_time_days", "fix_version_ids", "fix_version_names"]
+FIELDS = [
+    "completed_date",
+    "issue",
+    "project",
+    "type",
+    "story_points",
+    "cycle_time_days",
+    "fix_version_ids",
+    "fix_version_names",
+]
 
 
 def build_rows(issues: list, allowed_types: Optional[set]) -> list:
@@ -51,11 +67,11 @@ def build_rows(issues: list, allowed_types: Optional[set]) -> list:
     rows = []
 
     for issue in issues:
-        key    = issue.get("key", "")
+        key = issue.get("key", "")
         fields = issue.get("fields", {})
-        project = (fields.get("project")   or {}).get("key",  "")
-        itype   = (fields.get("issuetype") or {}).get("name", "")
-        sp      = fields.get("customfield_10005")
+        project = (fields.get("project") or {}).get("key", "")
+        itype = (fields.get("issuetype") or {}).get("name", "")
+        sp = fields.get("customfield_10005")
 
         if allowed_types is not None and itype not in allowed_types:
             continue
@@ -76,19 +92,23 @@ def build_rows(issues: list, allowed_types: Optional[set]) -> list:
             cycle_time = f"{lead_time:.1f}"
 
         fvs = fields.get("fixVersions") or []
-        fix_version_ids   = "; ".join(v.get("id", "") for v in fvs if isinstance(v, dict) and v.get("id"))
+        fix_version_ids = "; ".join(
+            v.get("id", "") for v in fvs if isinstance(v, dict) and v.get("id")
+        )
         fix_version_names = field_value(fvs)
 
-        rows.append({
-            "completed_date":    dt.strftime("%Y-%m-%d"),
-            "issue":             key,
-            "project":           project,
-            "type":              itype,
-            "story_points":      f"{float(sp):.1f}" if sp is not None else "",
-            "cycle_time_days":   cycle_time,
-            "fix_version_ids":   fix_version_ids,
-            "fix_version_names": fix_version_names,
-        })
+        rows.append(
+            {
+                "completed_date": dt.strftime("%Y-%m-%d"),
+                "issue": key,
+                "project": project,
+                "type": itype,
+                "story_points": f"{float(sp):.1f}" if sp is not None else "",
+                "cycle_time_days": cycle_time,
+                "fix_version_ids": fix_version_ids,
+                "fix_version_names": fix_version_names,
+            }
+        )
 
     # Oldest completions first — makes the CSV easy to inspect and diff
     rows.sort(key=lambda r: (r["completed_date"], r["issue"]))
