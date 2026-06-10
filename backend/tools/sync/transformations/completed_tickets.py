@@ -20,8 +20,8 @@ query time; no aggregation is done here.
 Columns
 -------
 completed_date    YYYY-MM-DD of the first terminal-status transition (UTC)
-issue             Jira issue key (e.g. ACCS-1234)
-project           Jira project key (ACCS, CONS, ENGS, NBLMNT, TRAS, …)
+issue             Jira issue key (e.g. PROJ-1234)
+project           Jira project key (as configured in config.env PROJECTS)
 type              Issue type (Story or Bug only, aligned with Flow Metrics)
 story_points      Story points as a float, or "" when not set
 cycle_time_days   Delivery Lead Time in days, using the same criteria as Flow

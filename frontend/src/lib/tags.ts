@@ -11,13 +11,17 @@ export interface TagProps {
   projColor?: string
 }
 
+// Color palette assigned to projects by their position in config.env PROJECTS
+// (cycling when there are more projects than colors); ORG is fixed.
+const PROJ_PALETTE = ['#4472C4', '#70AD47', '#FFC000', '#C00000', '#7030A0']
+
 export const PROJ_COLORS: Record<string, string> = {
-  ORG:    '#111111',
-  ACCS:   '#4472C4',
-  CONS:   '#70AD47',
-  ENGS:   '#FFC000',
-  NBLMNT: '#C00000',
-  TRAS:   '#7030A0',
+  ORG: '#111111',
+}
+
+/** Populate PROJ_COLORS for the configured projects (called at startup). */
+export function setProjColors(projects: string[]): void {
+  for (const [i, p] of projects.entries()) PROJ_COLORS[p] = PROJ_PALETTE[i % PROJ_PALETTE.length]
 }
 
 /**

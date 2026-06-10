@@ -18,6 +18,3 @@ frontend/dist/
 
 # Sync data — generated, not committed
 data/
-backend/tools/sync/logs/
-backend/tools/sync/.token
-backend/tools/sync/last_sync.txt

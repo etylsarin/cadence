@@ -1,5 +1,5 @@
 import {
-  RefreshCw,
+  RefreshCw, Sparkles,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 
@@ -12,5 +12,6 @@ import type { LucideIcon } from 'lucide-react'
  * Order matches the TOOLS[] registry in config.env.
  */
 export const TOOL_META: Record<string, { name: string; icon: LucideIcon }> = {
+  'ask':            { name: 'Ask',            icon: Sparkles },
   'sync':         { name: 'Sync Now',       icon: RefreshCw },
 }

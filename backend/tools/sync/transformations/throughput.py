@@ -16,7 +16,7 @@ original first terminal transition.
 Columns
 -------
 query             YYYY-MM of the terminal-status transition
-project           Jira project key (ACCS, CONS, ENGS, …)
+project           Jira project key (as configured in config.env PROJECTS)
 type              Issue type (Story, Bug, Task, Spike)
 count             Number of issues that completed in this month/project/type
 avg_story_points  Average story points of those issues (0.00 when none set)
