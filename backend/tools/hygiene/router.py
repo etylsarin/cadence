@@ -31,7 +31,7 @@ import json
 import logging
 import os
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
@@ -61,22 +61,31 @@ CYCLE_STAGES = {"dev", "testing", "sit", "uat",
 
 
 def _load_stage_map() -> dict:
-    for path in (_FLOW_CONFIG_PATH, _FLOW_DEFAULT_PATH):
+    """Shipped default overlaid with the user-saved gold config, so a partial
+    or hand-edited save can't silently unmap statuses the default covers."""
+    merged: dict = {}
+    for path in (_FLOW_DEFAULT_PATH, _FLOW_CONFIG_PATH):
         try:
             with open(path) as fh:
-                return json.load(fh)
+                data = json.load(fh)
         except (OSError, ValueError):
             continue
-    return {}
+        if isinstance(data, dict):
+            merged.update(data)
+    return merged
 
 EPIC_LINK_FIELD = "customfield_10008"
 POINTS_FIELD    = "customfield_10005"
 
-LOOP_THRESHOLD = 2    # re-entries into already-visited statuses before flagging
-STALE_DAYS     = 14   # days without a status change before started work is stale
+LOOP_THRESHOLD   = 2    # re-entries into already-visited statuses before flagging
+STALE_DAYS       = 14   # days without a status change before started work is stale
+RETRO_GRACE_DAYS = 3    # closing tickets shortly after a release is normal admin lag
 
 EPIC_TYPES   = {"Story", "Task", "Spike"}   # types expected to belong to an epic
 POINTS_TYPES = {"Story"}                    # types expected to carry an estimate
+
+# Abandoned work never feeds velocity, so a missing estimate there is noise.
+ABANDONED_STATUSES = {"Cancelled", "Rejected", "Won't Do"}
 
 RULES = [
     ("missing_points",    "Missing estimates",
@@ -106,13 +115,23 @@ def _parse_ts(s: str) -> Optional[datetime]:
 
 # ── Rule checks — each returns a violation detail string, or None ──────────────
 
-def _check_missing_points(t: dict, f: dict, stage: str) -> Optional[str]:
+def _points(raw) -> Optional[float]:
+    """Story points tolerating numeric strings; None for absent/garbage."""
+    try:
+        return float(raw) if raw is not None and raw != "" else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _check_missing_points(f: dict, stage: str) -> Optional[str]:
     itype = ((f.get("issuetype") or {}).get("name", "") or "")
     if itype not in POINTS_TYPES or stage in ("", "pre_work"):
         return None   # backlog items may legitimately be unestimated
-    if f.get(POINTS_FIELD) is not None:
-        return None
     status = ((f.get("status") or {}).get("name", "") or "")
+    if status in ABANDONED_STATUSES:
+        return None   # cancelled work never feeds velocity
+    if _points(f.get(POINTS_FIELD)) is not None:
+        return None
     return f"No story points; already in '{status}'"
 
 
@@ -125,7 +144,7 @@ def _check_no_epic(t: dict, f: dict) -> Optional[str]:
     return "Not linked to any epic"
 
 
-def _check_retro_fix_version(t: dict, f: dict, done_dt: Optional[datetime]) -> Optional[str]:
+def _check_retro_fix_version(f: dict, done_dt: Optional[datetime]) -> Optional[str]:
     created = (f.get("created", "") or "")[:10]
     done = done_dt.strftime("%Y-%m-%d") if done_dt else ""
     for v in f.get("fixVersions") or []:
@@ -134,9 +153,16 @@ def _check_retro_fix_version(t: dict, f: dict, done_dt: Optional[datetime]) -> O
         rd = (v.get("releaseDate", "") or "")[:10]
         if not rd:
             continue
+        # Grace window: closing tickets in the days after a release is normal
+        # admin lag (and absorbs the bare-date vs timezone-offset edge), so
+        # only completions clearly past the release are suspect.
+        try:
+            grace_end = (datetime.strptime(rd, "%Y-%m-%d") + timedelta(days=RETRO_GRACE_DAYS)).strftime("%Y-%m-%d")
+        except ValueError:
+            continue
         if created > rd:
             return f"Created {created}, after '{v.get('name', '?')}' released {rd}"
-        if done and done > rd:
+        if done and done > grace_end:
             return f"Completed {done}, after '{v.get('name', '?')}' released {rd}"
     return None
 
@@ -154,7 +180,7 @@ def _check_status_loops(trans: list) -> Optional[str]:
     if total < LOOP_THRESHOLD:
         return None
     worst = max(reentries, key=lambda s: reentries[s])
-    return f"{total} rework loops (e.g. re-entered '{worst}' ×{reentries[worst]})"
+    return f"{total} status re-entries (worst: '{worst}' ×{reentries[worst]})"
 
 
 def _check_stale_wip(f: dict, stage: str, trans: list, now: datetime) -> Optional[str]:
@@ -202,11 +228,10 @@ def run_audit(project: str) -> dict:
         trans = status_transitions(t)
         done_dt = _first_terminal_dt(trans)
 
-        sp = f.get(POINTS_FIELD)
         findings = {
-            "missing_points":    _check_missing_points(t, f, stage),
+            "missing_points":    _check_missing_points(f, stage),
             "no_epic":           _check_no_epic(t, f),
-            "retro_fix_version": _check_retro_fix_version(t, f, done_dt),
+            "retro_fix_version": _check_retro_fix_version(f, done_dt),
             "status_loops":      _check_status_loops(trans),
             "stale_wip":         _check_stale_wip(f, stage, trans, now),
         }
@@ -219,12 +244,16 @@ def run_audit(project: str) -> dict:
                 "type":    itype,
                 "status":  status,
                 "summary": f.get("summary", "") or "",
-                "points":  float(sp) if isinstance(sp, (int, float)) else None,
+                "points":  _points(f.get(POINTS_FIELD)),
                 "detail":  detail,
             })
 
+    def _natural_key(item: dict) -> tuple:
+        prefix, _, num = item["key"].partition("-")
+        return (prefix, int(num) if num.isdigit() else 0)
+
     for items in items_by_rule.values():
-        items.sort(key=lambda i: i["key"])
+        items.sort(key=_natural_key)
 
     return {
         "scanned":    scanned,
@@ -290,17 +319,21 @@ def api_suggest(req: SuggestRequest):
                 lines.append(f"- … and {rule['count'] - _MAX_KEYS_PER_RULE} more")
         if audit["violations"] == 0:
             return {"suggestions": "No violations found — nothing to fix. 🎉"}
+    except Exception:
+        log.exception("Error building hygiene suggestion prompt for %s", req.project)
+        raise HTTPException(status_code=500, detail="Internal server error")
 
+    try:
         text = _ai.complete(
             load_config(),
             [{"role": "user", "content": "\n".join(lines)}],
             system=_SUGGEST_SYSTEM,
             max_tokens=1500,
         )
-        return {"suggestions": text}
     except ValueError as e:
         # ai.py raises ValueError when no AI API key is configured.
         raise HTTPException(status_code=400, detail=str(e))
     except Exception:
         log.exception("Error drafting hygiene suggestions for %s", req.project)
         raise HTTPException(status_code=500, detail="Internal server error")
+    return {"suggestions": text}

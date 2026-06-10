@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { marked } from 'marked'
+import DOMPurify from 'dompurify'
 import { Sparkles } from 'lucide-react'
 import HygieneSidebar from './HygieneSidebar'
 import RuleSection from './RuleSection'
@@ -19,11 +20,16 @@ export default function Hygiene() {
   const [plan, setPlan]               = useState('')
   const [planLoading, setPlanLoading] = useState(false)
   const [planError, setPlanError]     = useState('')
+  // Bumped on every project switch so an in-flight plan request can detect
+  // it's stale and not render the old project's plan under the new one.
+  const planSeq = useRef(0)
 
   useEffect(() => {
     let cancelled = false
-    setLoading(true); setError(''); setAudit(null); setPlan(''); setPlanError('')
-    api<AuditData>(`/hygiene/api/audit?project=${project}`)
+    planSeq.current++
+    setLoading(true); setError(''); setAudit(null)
+    setPlan(''); setPlanError(''); setPlanLoading(false)
+    api<AuditData>(`/hygiene/api/audit?project=${encodeURIComponent(project)}`)
       .then((d) => { if (!cancelled) setAudit(d) })
       .catch((e) => { if (!cancelled) setError((e as Error).message) })
       .finally(() => { if (!cancelled) setLoading(false) })
@@ -40,17 +46,18 @@ export default function Hygiene() {
   }
 
   async function draftPlan() {
+    const seq = ++planSeq.current
     setPlanLoading(true); setPlanError(''); setPlan('')
     try {
       const d = await api<{ suggestions: string }>('/hygiene/api/suggest', {
         method: 'POST',
         body: JSON.stringify({ project }),
       })
-      setPlan(d.suggestions)
+      if (seq === planSeq.current) setPlan(d.suggestions)
     } catch (e) {
-      setPlanError((e as Error).message)
+      if (seq === planSeq.current) setPlanError((e as Error).message)
     } finally {
-      setPlanLoading(false)
+      if (seq === planSeq.current) setPlanLoading(false)
     }
   }
 
@@ -124,7 +131,7 @@ export default function Hygiene() {
               {plan ? (
                 <div
                   className="prose prose-sm dark:prose-invert max-w-none rounded-lg border border-gray-100 dark:border-slate-700 bg-gray-50/50 dark:bg-slate-800/50 px-5 py-4"
-                  dangerouslySetInnerHTML={{ __html: marked.parse(plan, { breaks: true }) as string }}
+                  dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(marked.parse(plan, { breaks: true }) as string) }}
                 />
               ) : !planError && (
                 <p className="text-xs text-gray-400 dark:text-gray-500">
