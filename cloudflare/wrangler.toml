@@ -1,0 +1,29 @@
+name = "cadence"
+main = "src/index.ts"
+compatibility_date = "2026-06-01"
+
+[[containers]]
+class_name = "Cadence"
+image = "../Dockerfile"
+instance_type = "standard-2"
+max_instances = 1
+
+[[durable_objects.bindings]]
+name = "CADENCE"
+class_name = "Cadence"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Cadence"]
+
+[[r2_buckets]]
+binding = "DATA"
+bucket_name = "cadence-data"
+
+[vars]
+JIRA_URL = "https://sessionm.atlassian.net"
+JIRA_EMAIL = "kpazdera@sessionm.com"
+R2_BUCKET_NAME = "cadence-data"
+
+[secrets]
+required = ["JIRA_API_TOKEN", "ANTHROPIC_API_KEY", "R2_ACCOUNT_ID", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY"]

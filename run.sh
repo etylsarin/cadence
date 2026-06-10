@@ -5,9 +5,24 @@
 #   ./run.sh dev      → dev mode (Vite HMR on :5173 + FastAPI on :8765)
 #   ./run.sh build    → build frontend only
 
-NODE_BIN="$HOME/node-v24.14.0-darwin-arm64/bin"
+NODE_DIR="$HOME/node-v24.14.0-darwin-arm64"
+if [ -v NVM_DIR ]; then
+  if [ -s "$NVM_DIR/nvm.sh" ]; then
+    source "$NVM_DIR/nvm.sh"
+  fi
+fi
+if [ -n "$(command -v nvm)" ]; then
+  nvm use current &>/dev/null || (nvm install 24.14.0 && nvm use 24.14.0)
+  NODE_DIR=$(dirname $(dirname $(nvm which current)))
+fi
+
+NODE_BIN="${NODE_DIR}/bin"
 NODE="$NODE_BIN/node"
-NPM=($NODE "$HOME/node-v24.14.0-darwin-arm64/lib/node_modules/npm/bin/npm-cli.js")
+NPM=($NODE "$NODE_DIR/lib/node_modules/npm/bin/npm-cli.js")
+if [ ! -d "$PWD/frontend/node_modules/.bin" ]; then
+  echo "Installing frontend dependencies…"
+  (cd frontend && $NPM install)
+fi
 VITE=($NODE "$PWD/frontend/node_modules/.bin/vite")
 
 # Add node to PATH for child processes

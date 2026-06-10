@@ -1,0 +1,47 @@
+services:
+  storage:
+    image: rustfs/rustfs
+    ports:
+      - "9000:9000"
+    environment:
+      RUSTFS_ACCESS_KEY: rustfsadmin
+      RUSTFS_SECRET_KEY: rustfsadmin
+    volumes:
+      - rustfs-data:/data
+
+  bucket-init:
+    image: amazon/aws-cli
+    depends_on:
+      storage:
+        condition: service_started
+    environment:
+      AWS_ACCESS_KEY_ID: rustfsadmin
+      AWS_SECRET_ACCESS_KEY: rustfsadmin
+      AWS_DEFAULT_REGION: us-east-1
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["aws s3api create-bucket --bucket cadence-data --endpoint-url http://storage:9000 || true"]
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    env_file: .env
+    environment:
+      R2_ENDPOINT: http://storage:9000
+      R2_ACCESS_KEY_ID: rustfsadmin
+      R2_SECRET_ACCESS_KEY: rustfsadmin
+      R2_BUCKET_NAME: cadence-data
+    cap_add:
+      - SYS_ADMIN
+    devices:
+      - /dev/fuse:/dev/fuse
+    security_opt:
+      - apparmor:unconfined
+    depends_on:
+      bucket-init:
+        condition: service_completed_successfully
+
+volumes:
+  rustfs-data:
