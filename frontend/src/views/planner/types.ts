@@ -3,14 +3,11 @@ import type { SimResult } from './simulate'
 export interface TeamConfig {
   id: string
   name: string
+  /** Average completed items/month from synced data (see simulate.Team). */
   throughputPerMonth: number
-  contingencyPct: number
-  tailWorkdays: number
 }
 
 export interface ScenarioOn {
-  /** null = use the team's configured contingency; a number overrides it. */
-  contingencyPct: number | null
   extraCapacityPct: number
   excludeTypes: string[]
   dropPriorities: string[]

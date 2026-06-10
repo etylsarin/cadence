@@ -10,9 +10,6 @@ import type { TeamConfig, ScenarioOn, RecentEpic, SelectedEpic, EpicOverride, Re
 
 const DEFAULT_EXCLUDED_STATUSES = new Set(['Delivered', 'Closed', 'Rejected', 'Done'])
 
-// Tail percentile fixed at P85 — the conservative "plan for this" value.
-const TAIL_PCT = 85
-
 interface EpicsResponse { epics: RecentEpic[] }
 interface ChildrenResponse {
   epics: { key: string; children: EpicChild[]; status_breakdown: Record<string, number> }[]
@@ -28,16 +25,12 @@ export default function Planner() {
   // initial selection on mount, triggering the first load.
   const [period, setPeriod] = useState<PeriodSelection | null>(null)
 
-  // Per-squad team config — keyed by squad id for persistence across switches.
+  // Per-squad team pace — average items/month from synced data, keyed by squad.
   const [teamConfig, setTeamConfig] = useState<Record<string, TeamConfig>>(() =>
-    Object.fromEntries(ALL_PROJECTS.map((s) => [s, { id: s, name: s, throughputPerMonth: 0, contingencyPct: 25, tailWorkdays: 0 }])),
+    Object.fromEntries(ALL_PROJECTS.map((s) => [s, { id: s, name: s, throughputPerMonth: 0 }])),
   )
 
   const [throughputMeta, setThroughputMeta] = useState<{ as_of: string | null; months_used: string[]; months_excluded: string[] }>({ as_of: null, months_used: [], months_excluded: [] })
-
-  // Release tails default OFF (experimental overlay); persisted across reloads.
-  const [showTail, setShowTailState] = useState(() => localStorage.getItem('cadence:planner:show-tail') === '1')
-  const setShowTail = (v: boolean) => { setShowTailState(v); localStorage.setItem('cadence:planner:show-tail', v ? '1' : '0') }
 
   const [recentEpicsByProject, setRecentEpicsByProject] = useState<Record<string, RecentEpic[]>>({})
   const [loadingEpicsFor, setLoadingEpicsFor] = useState<string | null>(null)
@@ -49,7 +42,7 @@ export default function Planner() {
   const [statusInScope, setStatusInScope] = useState<Record<string, boolean>>({})
 
   const [scenarioOn, setScenarioOn] = useState<ScenarioOn>({
-    contingencyPct: null, extraCapacityPct: 0, excludeTypes: [], dropPriorities: [],
+    extraCapacityPct: 0, excludeTypes: [], dropPriorities: [],
   })
 
   // Custom epics — placeholders for work not yet in Jira, keyed by squad.
@@ -81,18 +74,15 @@ export default function Planner() {
 
   const epicsForSquad = useMemo(() => selectedEpics.filter((e) => e.project === squad), [selectedEpics, squad])
 
-  const buildTeam = useCallback((opts: { contingencyPct?: number | null; extraCapacityPct?: number } = {}): TeamConfig => {
-    const { contingencyPct = null, extraCapacityPct = 0 } = opts
+  const buildTeam = useCallback((opts: { extraCapacityPct?: number } = {}): TeamConfig => {
+    const { extraCapacityPct = 0 } = opts
     const base = teamConfig[squad]
-    const effContingency = contingencyPct == null ? base.contingencyPct : Number(contingencyPct)
     return {
       id: base.id,
       name: base.name,
       throughputPerMonth: base.throughputPerMonth * (1 + extraCapacityPct / 100),
-      contingencyPct: effContingency,
-      tailWorkdays: showTail ? base.tailWorkdays || 0 : 0,
     }
-  }, [teamConfig, squad, showTail])
+  }, [teamConfig, squad])
 
   const buildEpics = useCallback((list: SelectedEpic[], opts: { excludeTypes?: string[] | null; dropPriorities?: string[] | null } = {}): EpicInput[] => {
     const { excludeTypes = null, dropPriorities = null } = opts
@@ -124,7 +114,7 @@ export default function Planner() {
   const scenario = useMemo<SimResult | null>(() => {
     if (!epicsForSquad.length) return null
     return simulate({
-      teams: [buildTeam({ contingencyPct: scenarioOn.contingencyPct, extraCapacityPct: scenarioOn.extraCapacityPct })],
+      teams: [buildTeam({ extraCapacityPct: scenarioOn.extraCapacityPct })],
       epics: buildEpics(epicsForSquad, { excludeTypes: scenarioOn.excludeTypes, dropPriorities: scenarioOn.dropPriorities }),
       start: baselineStart,
       focusMode: 'parallel',
@@ -161,20 +151,6 @@ export default function Planner() {
         })
       })
       .catch((e) => setGlobalError(`Throughput: ${(e as Error).message}`))
-
-    // Release-wait tail: per-squad P85 wait_release calendar days → workdays (×5/7).
-    api<{ pct: number; months_used?: string[]; months_excluded?: string[]; sample_sizes?: Record<string, number>; release_wait_days?: Record<string, number> }>(`/planner/api/release-wait?${periodParams(p)}&pct=${TAIL_PCT}`)
-      .then((res) => {
-        setTeamConfig((prev) => {
-          const next = { ...prev }
-          for (const s of ALL_PROJECTS) {
-            const calDays = Number(res.release_wait_days?.[s] || 0)
-            next[s] = { ...next[s], tailWorkdays: Math.max(0, Math.round((calDays * 5) / 7)) }
-          }
-          return next
-        })
-      })
-      .catch((e) => console.warn('Release-wait load failed:', (e as Error).message))
   }, [])
 
   // Auto-load epics for the selected squad.
@@ -386,10 +362,6 @@ export default function Planner() {
     setStartDate(v < today ? today : v)
   }, [])
 
-  const updateTeam = useCallback((updated: TeamConfig) => {
-    if (updated?.id) setTeamConfig((prev) => (prev[updated.id] ? { ...prev, [updated.id]: { ...prev[updated.id], ...updated } } : prev))
-  }, [])
-
   // ── Drag / reorder ──────────────────────────────────────────────────────────
 
   /** Pure: move `epicKey` to a new priority slot / start / lane within its squad. */
@@ -532,12 +504,8 @@ export default function Planner() {
             scenario={scenario}
             previewBaseline={previewBaseline}
             scenarioOn={scenarioOn}
-            showTail={showTail}
-            tailPct={TAIL_PCT}
             onScenarioOnChange={setScenarioOn}
-            onTeamChange={updateTeam}
             onStartDateChange={setStartDateClamped}
-            onShowTailChange={setShowTail}
             onDragPreview={setDragPreview}
             onReorder={reorder}
             onRemove={removeEpic}

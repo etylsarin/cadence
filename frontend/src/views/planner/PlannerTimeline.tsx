@@ -198,12 +198,8 @@ interface Props {
   scenario: SimResult | null
   previewBaseline: SimResult | null
   scenarioOn: ScenarioOn
-  showTail?: boolean
-  tailPct?: number
   onScenarioOnChange: (s: ScenarioOn) => void
-  onTeamChange: (t: TeamConfig) => void
   onStartDateChange: (v: string) => void
-  onShowTailChange: (v: boolean) => void
   onDragPreview: (change: ReorderChange | null) => void
   onReorder: (change: ReorderChange) => void
   onRemove: (epicKey: string) => void
@@ -212,8 +208,7 @@ interface Props {
 
 export default function PlannerTimeline({
   squad, team, startDate, baseline, scenario, previewBaseline, scenarioOn,
-  showTail = true, tailPct = 85,
-  onScenarioOnChange, onTeamChange, onStartDateChange, onShowTailChange,
+  onScenarioOnChange, onStartDateChange,
   onDragPreview, onReorder, onRemove, onLayout,
 }: Props) {
   const [scale, setScale] = useState<Scale>('auto')
@@ -237,8 +232,7 @@ export default function PlannerTimeline({
 
   // ── Scenario / team setters ─────────────────────────────────────────────────
   const setScen = (key: keyof ScenarioOn, value: unknown) => onScenarioOnChange({ ...scenarioOn, [key]: value } as ScenarioOn)
-  const resetScenario = () => onScenarioOnChange({ contingencyPct: null, extraCapacityPct: 0, excludeTypes: [], dropPriorities: [] })
-  const setTeamField = (key: keyof TeamConfig, value: unknown) => onTeamChange({ ...team, [key]: value } as TeamConfig)
+  const resetScenario = () => onScenarioOnChange({ extraCapacityPct: 0, excludeTypes: [], dropPriorities: [] })
 
   const isExcluded = (type: string) => (scenarioOn.excludeTypes || []).includes(type)
   const toggleExcludeType = (type: string) => {
@@ -413,9 +407,7 @@ export default function PlannerTimeline({
   }, [baselineRows, baselineStartD])
 
   // ── End / finish markers ─────────────────────────────────────────────────────
-  const squadLatestEnd = baselineRows.length ? new Date(Math.max(...baselineRows.map((r) => (r.deliveryEnd || r.plannedEnd).getTime()))) : null
-  const squadBodyEnd = baselineRows.length ? new Date(Math.max(...baselineRows.map((r) => r.plannedEnd.getTime()))) : null
-  const bodyFinishX = squadBodyEnd ? wdFromOrigin(squadBodyEnd) * pxPerWorkday : 0
+  const squadLatestEnd = baselineRows.length ? new Date(Math.max(...baselineRows.map((r) => r.plannedEnd.getTime()))) : null
   const finishX = squadLatestEnd ? wdFromOrigin(squadLatestEnd) * pxPerWorkday : 0
 
   // ── Refit / recenter ────────────────────────────────────────────────────────
@@ -526,15 +518,12 @@ export default function PlannerTimeline({
   }, [scale, chartOrigin.getTime(), chartTotalWorkdays, pxPerWorkday, primaryMarkers])
 
   // ── Scenario summary ────────────────────────────────────────────────────────
-  const contingencyDirty = scenarioOn.contingencyPct != null && Number(scenarioOn.contingencyPct) !== Number(team?.contingencyPct || 0)
-  const effectiveContingencyPct = scenarioOn.contingencyPct == null ? Number(team?.contingencyPct || 0) : Number(scenarioOn.contingencyPct)
-  const scenarioDirty = contingencyDirty || scenarioOn.extraCapacityPct !== 0 ||
+  const scenarioDirty = scenarioOn.extraCapacityPct !== 0 ||
     (scenarioOn.excludeTypes?.length ?? 0) > 0 || (scenarioOn.dropPriorities?.length ?? 0) > 0
   const deltaWorkdays = baseline && scenario ? scenario.totalWorkdays - baseline.totalWorkdays : 0
 
-  const effectivePerWorkday = dailyThroughput({ id: team.id, name: team.name, throughputPerMonth: team.throughputPerMonth, contingencyPct: team.contingencyPct })
+  const perWorkday = dailyThroughput(team)
   const scenarioThroughputPerMonth = Number(team?.throughputPerMonth || 0) * (1 + Number(scenarioOn?.extraCapacityPct || 0) / 100)
-  const tailCalendarDays = Math.round(Number(team?.tailWorkdays || 0) * 7 / 5)
 
   const scopeEpics = baseline?.allRows?.length || 0
   const scopeItems = (baseline?.allRows || []).reduce((s, r) => s + Number(r.items || 0), 0)
@@ -735,40 +724,9 @@ export default function PlannerTimeline({
     ].join(' ')
   }
 
-  function tailWidth(row: PlanRow): number {
-    if (!showTail) return 0
-    return Math.max(0, Number(row.tailWorkdays || 0)) * pxPerWorkday
-  }
-  const tailOffset = (row: PlanRow) => barOffset(row) + barWidth(row)
-  function tailStyle(row: PlanRow): CSSProperties | null {
-    const w = tailWidth(row)
-    if (w <= 0) return null
-    const h = Math.max(6, Math.round(BAR_HEIGHT * 0.35))
-    return {
-      top: `${(LANE_HEIGHT - h) / 2}px`,
-      left: `${tailOffset(row)}px`,
-      width: `${w}px`,
-      height: `${h}px`,
-      backgroundColor: row.color,
-      opacity: 0.32,
-      backgroundImage:
-        'repeating-linear-gradient(135deg, rgba(255,255,255,0.55) 0, rgba(255,255,255,0.55) 3px, transparent 3px, transparent 7px)',
-      borderRadius: '2px',
-    }
-  }
-  function tailDiamondHidden(row: PlanRow, lane: Lane, rowIdx: number): boolean {
-    if (rowIdx >= lane.rows.length - 1) return false
-    const next = lane.rows[rowIdx + 1]
-    if (!next) return false
-    const t = row.deliveryEnd.getTime()
-    return t > next.plannedStart.getTime() && t < next.plannedEnd.getTime()
-  }
-
   const draggedPreviewRow = dragState ? displayRows.find((r) => r.epicId === dragState.epicId) || null : null
   const draggedLabelX = draggedPreviewRow ? barOffset(draggedPreviewRow) : null
   const draggedLabelDate = draggedPreviewRow ? formatDropLabel(draggedPreviewRow.plannedStart) : null
-
-  const numInputCls = 'tabular-nums text-gray-900 dark:text-gray-100 bg-transparent rounded border border-gray-200 dark:border-slate-600 hover:border-gray-300 dark:hover:border-slate-500 focus:border-blue-400 dark:focus:border-blue-500 focus:outline-none px-1.5 py-0.5 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:m-0 [&::-webkit-outer-spin-button]:m-0'
 
   return (
     <section>
@@ -787,67 +745,25 @@ export default function PlannerTimeline({
         <div>
           <div className="font-semibold text-gray-800 dark:text-gray-200 mb-1">How it works</div>
           <ul className="space-y-1 list-disc list-inside">
-            <li><span className="font-medium">Throughput</span> (items / mo) is pre-filled from Sync gold; <span className="font-medium">Contingency %</span> reduces effective throughput. Both are editable in the strip above the metric boxes.</li>
+            <li><span className="font-medium">Pace</span> is the squad's average completed items/month, measured from synced data over the selected timeframe. Because it's measured end-to-end on real deliveries, waits, rework and release queues are already in the rate — an epic's default length is simply its item count at that pace.</li>
             <li><span className="font-medium">Start</span> sets when the plan begins — click the date in the Start box (a calendar picker; past dates are disabled) <em>or</em> drag the green <span className="font-medium">Start</span> handle on the chart to slide the whole plan.</li>
             <li><span className="font-medium">Drag bars horizontally</span> to set when each epic starts. Bars that overlap in time share the squad's daily capacity equally and split into their own swimlanes automatically. <span className="font-medium">Drag a bar off the top or left edge</span> of the chart to remove it from the plan.</li>
             <li><span className="font-medium">Lanes</span> are queues — bars inside the same lane stay back-to-back; bars in different lanes share the squad's daily capacity in parallel.</li>
             <li><span className="font-medium">Layout helpers</span>: <em>Parallel</em> drops every epic into its own lane at the plan start; <em>Sequential</em> stacks them into one lane; <em>Remove gaps</em> pulls every lane back-to-back without touching lane assignments.</li>
             <li><span className="font-medium">Scale</span> picks the zoom — Auto fits the plan exactly; Month / Quarter / Year are fixed zoom levels. Every scale has matching scroll room on both sides, so you can scroll back past Start or forward past End.</li>
-            <li><span className="font-medium">Release tail</span> (toggle in the toolbar) appends a faded hatched tail after each epic, sized from the P{tailPct} <code className="text-[10px] bg-gray-100 dark:bg-slate-800 px-1 rounded">wait_release</code> time for the selected timeframe (calendar days, converted to workdays for the axis). The team's capacity flows into the next epic during the tail, so intermediate tails overlap visually and only the final tail pushes the delivery date out. Earlier idle waits (wait_testing / wait_sit / wait_uat) sit between work stages and are already baked into throughput, so they're not counted here.</li>
           </ul>
         </div>
       </AppInfoPanel>
 
-      {/* Team rate (editable) strip */}
-      <div className="mt-4 flex flex-wrap gap-3">
-        <div className="rounded-lg border border-gray-200 dark:border-slate-700 px-3 py-2">
-          <div className="text-[10px] uppercase tracking-wide text-gray-500 mb-0.5">Throughput</div>
-          <div className="flex items-baseline gap-1.5">
-            <input
-              key={`tp-${team.throughputPerMonth}`}
-              defaultValue={team.throughputPerMonth ?? 0}
-              onChange={(e) => setTeamField('throughputPerMonth', Math.max(0, Math.round(Number(e.target.value || 0))))}
-              type="number" min={0} step={1}
-              className={`w-16 text-xl font-bold ${numInputCls}`}
-            />
-            <span className="text-[11px] text-gray-500">items/mo</span>
-            {scenarioDirty && scenarioOn.extraCapacityPct !== 0 && (
-              <span className={`text-[11px] font-medium tabular-nums ${scenarioOn.extraCapacityPct > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`}>
-                → {Math.round(scenarioThroughputPerMonth)} ({scenarioOn.extraCapacityPct >= 0 ? '+' : ''}{scenarioOn.extraCapacityPct}%)
-              </span>
-            )}
-          </div>
-          <div className="text-[10px] text-gray-400 mt-0.5 tabular-nums">≈ {effectivePerWorkday.toFixed(2)}/workday after contingency</div>
-        </div>
-
-        <div className="rounded-lg border border-gray-200 dark:border-slate-700 px-3 py-2">
-          <div className="text-[10px] uppercase tracking-wide text-gray-500 mb-0.5">Contingency</div>
-          <div className="flex items-baseline gap-1.5">
-            <input
-              key={`ct-${team.contingencyPct}`}
-              defaultValue={team.contingencyPct ?? 0}
-              onChange={(e) => setTeamField('contingencyPct', Math.min(100, Math.max(0, Number(e.target.value || 0))))}
-              type="number" min={0} max={100}
-              className={`w-12 text-xl font-bold ${numInputCls}`}
-            />
-            <span className="text-[11px] text-gray-500">%</span>
-            {contingencyDirty && (
-              <span className={`text-[11px] font-medium tabular-nums ${effectiveContingencyPct < (team.contingencyPct || 0) ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`}>→ {effectiveContingencyPct}%</span>
-            )}
-          </div>
-          <div className="text-[10px] text-gray-400 mt-0.5">off the team's throughput</div>
-        </div>
-
-        <label className="rounded-lg border border-gray-200 dark:border-slate-700 px-3 py-2 cursor-pointer select-none hover:bg-gray-50 dark:hover:bg-slate-800/50">
-          <div className="text-[10px] uppercase tracking-wide text-gray-500 mb-0.5">Release tail</div>
-          <div className="flex items-baseline gap-1.5">
-            <input type="checkbox" checked={showTail} onChange={(e) => onShowTailChange(e.target.checked)} className="cursor-pointer w-4 h-4 align-middle" />
-            <span className="text-xl font-bold tabular-nums text-gray-900 dark:text-gray-100">{team?.tailWorkdays || 0}</span>
-            <span className="text-[11px] text-gray-500">wd</span>
-            <span className="text-[10px] text-gray-400 tabular-nums">P{tailPct} · ≈{tailCalendarDays}d</span>
-          </div>
-          <div className="text-[10px] text-gray-400 mt-0.5">wait_release tail per epic</div>
-        </label>
+      {/* Data-derived pace (read-only) */}
+      <div className="mt-2 text-xs text-gray-500 dark:text-gray-400 tabular-nums">
+        Pace: <span className="font-semibold text-gray-900 dark:text-gray-100">{Math.round(team?.throughputPerMonth || 0)} items/mo</span>
+        <span className="text-gray-400 dark:text-gray-500"> (≈ {perWorkday.toFixed(2)}/workday — average completed work over the selected timeframe)</span>
+        {scenarioDirty && scenarioOn.extraCapacityPct !== 0 && (
+          <span className={`ml-1.5 font-medium ${scenarioOn.extraCapacityPct > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`}>
+            → {Math.round(scenarioThroughputPerMonth)} ({scenarioOn.extraCapacityPct >= 0 ? '+' : ''}{scenarioOn.extraCapacityPct}%)
+          </span>
+        )}
       </div>
 
       {/* Key planner metrics */}
@@ -1032,18 +948,11 @@ export default function PlannerTimeline({
                   <GripVertical size={11} className="shrink-0 -mr-0.5 opacity-60" /><FlagTriangleRight size={11} className="shrink-0" /> {shortDate(actualStartDate)}
                 </div>
                 <div
-                  title={showTail && finishX > bodyFinishX ? 'Delivery (last item shipped, body + final tail)' : 'End'}
+                  title="End"
                   className="absolute top-6 z-[8] inline-flex items-center gap-1 text-[10px] font-medium tabular-nums bg-gray-100 dark:bg-slate-800 text-gray-600 dark:text-gray-300 px-1.5 py-0.5 rounded whitespace-nowrap"
                   style={{ left: `${LABEL_COL_PX + finishX}px`, transform: 'translateX(-50%)' }}
                 ><FlagTriangleLeft size={11} className="shrink-0" /> {shortDate(squadLatestEnd || baseline.latestEnd)}</div>
 
-                {showTail && bodyFinishX > 0 && finishX > bodyFinishX + 1 && squadBodyEnd && (
-                  <div
-                    title="Body end — team finished active work; last item still in release queue"
-                    className="absolute top-6 z-[7] inline-flex items-center gap-1 text-[10px] tabular-nums bg-white dark:bg-slate-900 text-gray-400 dark:text-gray-500 border border-dashed border-gray-300 dark:border-slate-600 px-1.5 py-0.5 rounded whitespace-nowrap"
-                    style={{ left: `${LABEL_COL_PX + bodyFinishX}px`, transform: 'translateX(-50%)' }}
-                  >{shortDate(squadBodyEnd)}</div>
-                )}
                 {showScenarioGhost && scenarioFinishX !== null && deltaWorkdays !== 0 && scenario && (
                   <div
                     title="What-if delivery"
@@ -1133,9 +1042,6 @@ export default function PlannerTimeline({
                             <div className="min-w-[200px]">
                               <div className="text-sm font-semibold text-gray-900 dark:text-gray-100 tabular-nums">{row.durationWorkdays} workdays</div>
                               <div className="text-[11px] text-gray-500 tabular-nums">{shortDate(row.plannedStart)} → {shortDate(row.plannedEnd)}</div>
-                              {showTail && row.tailWorkdays > 0 && (
-                                <div className="text-[11px] text-gray-500 tabular-nums mt-0.5">+ {row.tailWorkdays} wd tail · ships {shortDate(row.deliveryEnd)}</div>
-                              )}
                               <div className="mt-1.5 pt-1.5 border-t border-gray-100 dark:border-slate-700">
                                 <div className="font-mono text-[11px] text-gray-500">{row.epicId}</div>
                                 <div className="text-[12px] font-medium text-gray-800 dark:text-gray-200 leading-tight">{row.epicName}</div>
@@ -1153,43 +1059,6 @@ export default function PlannerTimeline({
                           </div>
                         </AppTooltip>
                       ))}
-
-                      {/* Tails + delivery diamonds */}
-                      {lane.rows.map((row, rowIdx) => {
-                        const ts = tailStyle(row)
-                        if (!ts) return null
-                        return (
-                          <span key={`tail-${row.epicId}`}>
-                            <AppTooltip
-                              placement="top" followCursor
-                              className="absolute z-[0] pointer-events-auto"
-                              style={ts}
-                              content={
-                                <>
-                                  <div className="text-[11px] text-gray-700 dark:text-gray-200">
-                                    <span className="font-semibold">Release tail · {row.tailWorkdays} wd</span>
-                                    <span className="text-gray-500"> (P{tailPct} wait_release)</span>
-                                  </div>
-                                  <div className="text-[11px] text-gray-500 tabular-nums">body ends {shortDate(row.plannedEnd)} → ships {shortDate(row.deliveryEnd)}</div>
-                                </>
-                              }
-                            ><span /></AppTooltip>
-                            {!tailDiamondHidden(row, lane, rowIdx) && (
-                              <div
-                                className="absolute pointer-events-none z-[2]"
-                                style={{
-                                  left: `${tailOffset(row) + tailWidth(row) - 4}px`,
-                                  top: `${LANE_HEIGHT / 2 - 4}px`,
-                                  width: '8px', height: '8px',
-                                  backgroundColor: row.color,
-                                  transform: 'rotate(45deg)',
-                                  borderRadius: '1px',
-                                }}
-                              />
-                            )}
-                          </span>
-                        )
-                      })}
                     </div>
                   </div>
                 ))}
@@ -1205,7 +1074,7 @@ export default function PlannerTimeline({
                   <div className="font-semibold text-gray-800 dark:text-gray-200 mb-1">How it works</div>
                   <ul className="space-y-1 list-disc list-inside">
                     <li>Flip the controls below to ask <em>"what if?"</em> — the impact is shown live as <span className="font-medium">big delta numbers</span> in the Scope / Duration / Delivery boxes above and as a dashed scenario delivery line on the chart.</li>
-                    <li><span className="font-medium">Contingency</span> slider overrides the team's configured contingency for the scenario (defaults to the value in the strip above). <span className="font-medium">Capacity</span> scales throughput up or down (−50% to +100%).</li>
+                    <li><span className="font-medium">Capacity</span> scales the data-derived pace up or down (−50% to +100%) — e.g. people joining or leaving the squad.</li>
                     <li><span className="font-medium">Descope</span> removes <span className="font-medium">whole epics</span> from the plan (by priority tier — Critical is never dropped); <span className="font-medium">Exclude</span> removes individual <span className="font-medium">items</span> (by issue type) from inside every epic that stays.</li>
                     <li>Real epics inherit their Jira priority; set or override it per epic in the Scope table above. Click <span className="font-medium">Reset</span> (top right) to clear all tweaks at once.</li>
                   </ul>
@@ -1216,19 +1085,6 @@ export default function PlannerTimeline({
               )}
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-2.5 text-xs">
-              {/* Contingency */}
-              <div className="flex items-center gap-2 py-1">
-                <span className="text-gray-700 dark:text-gray-300 whitespace-nowrap w-28">Contingency</span>
-                <input
-                  value={effectiveContingencyPct}
-                  type="range" min={0} max={100} step={5}
-                  className="flex-1"
-                  title={`Team default: ${team.contingencyPct || 0}%`}
-                  onChange={(e) => setScen('contingencyPct', Number(e.target.value))}
-                />
-                <span className={`font-mono tabular-nums w-12 text-right ${contingencyDirty ? (effectiveContingencyPct < (team.contingencyPct || 0) ? 'text-emerald-600 dark:text-emerald-400 font-semibold' : 'text-amber-600 dark:text-amber-400 font-semibold') : 'text-gray-500'}`}>{effectiveContingencyPct}%</span>
-              </div>
-
               {/* Descope */}
               <div className="flex items-center gap-2 py-1 flex-wrap" title="Drop whole epics at the toggled priority tiers">
                 <span className="whitespace-nowrap w-28"><span className="text-gray-700 dark:text-gray-300">Descope</span> <span className="text-gray-400 dark:text-gray-500">epics</span></span>

@@ -8,9 +8,14 @@ const WORKDAYS_PER_WEEK = 5
 export interface Team {
   id: string
   name: string
+  /**
+   * Average completed items/month, measured from synced data over the selected
+   * timeframe. Because it is measured end-to-end on real deliveries, waits,
+   * rework, release queues and contingency are already baked into the rate —
+   * no separate knobs. (Later: an AI pass over the epic's tickets can refine
+   * the per-epic estimate.)
+   */
   throughputPerMonth: number
-  contingencyPct: number
-  tailWorkdays?: number
 }
 
 export interface EpicInput {
@@ -36,8 +41,6 @@ export interface PlanRow {
   laneIndex: number
   plannedStart: Date
   plannedEnd: Date
-  deliveryEnd: Date
-  tailWorkdays: number
   durationWorkdays: number
 }
 
@@ -46,7 +49,6 @@ export interface TeamPlan { teamId: string; teamName: string; rows: PlanRow[] }
 export interface SimResult {
   teamPlans: TeamPlan[]
   allRows: PlanRow[]
-  bodyEnd: Date
   latestEnd: Date
   totalWorkdays: number
   totalWeeks: number
@@ -86,17 +88,14 @@ export function countWorkdays(start: Date, end: Date): number {
   return count
 }
 
-/** Per-team effective daily throughput in items/day (after contingency). */
+/** Per-team daily throughput in items/day, from the data-derived monthly average. */
 export function dailyThroughput(team: Team): number {
-  const monthly = Number(team.throughputPerMonth || 0)
-  const c = Math.min(100, Math.max(0, Number(team.contingencyPct || 0)))
-  return (monthly * (1 - c / 100)) / WORKDAYS_PER_MONTH
+  return Number(team.throughputPerMonth || 0) / WORKDAYS_PER_MONTH
 }
 
 function simulateSequential(team: Team, assigned: EpicInput[], start: Date): PlanRow[] {
   const perDay = dailyThroughput(team)
   if (perDay <= 0 || !assigned.length) return []
-  const tailWd = Math.max(0, Math.floor(Number(team.tailWorkdays || 0)))
   const rows: PlanRow[] = []
   let cursorWd = 0
   for (const epic of assigned) {
@@ -107,11 +106,10 @@ function simulateSequential(team: Team, assigned: EpicInput[], start: Date): Pla
     const startWd = Math.max(cursorWd, earliestWd)
     const plannedStart = startWd === 0 ? new Date(start) : addWorkdays(start, startWd)
     const plannedEnd = addWorkdays(plannedStart, workdays)
-    const deliveryEnd = tailWd > 0 ? addWorkdays(plannedEnd, tailWd) : plannedEnd
     rows.push({
       teamId: team.id, teamName: team.name, epicId: epic.id, epicName: epic.name, color: epic.color,
       priorityLevel: epic.priorityLevel || null, items, laneIndex: Number(epic.laneIndex || 0),
-      plannedStart, plannedEnd, deliveryEnd, tailWorkdays: tailWd, durationWorkdays: workdays,
+      plannedStart, plannedEnd, durationWorkdays: workdays,
     })
     cursorWd = startWd + workdays
   }
@@ -185,7 +183,6 @@ function simulateParallel(team: Team, assigned: EpicInput[], start: Date): PlanR
     }
   }
 
-  const tailWd = Math.max(0, Math.floor(Number(team.tailWorkdays || 0)))
   const toWd = (wd: number) => Math.max(0, Math.ceil(wd - EPS))
   return out.map(({ row, startWd, endWd }) => {
     const s = toWd(startWd)
@@ -193,11 +190,10 @@ function simulateParallel(team: Team, assigned: EpicInput[], start: Date): PlanR
     const durationWorkdays = Math.max(1, e - s)
     const plannedStart = s <= 0 ? new Date(start) : addWorkdays(start, s)
     const plannedEnd = addWorkdays(plannedStart, durationWorkdays)
-    const deliveryEnd = tailWd > 0 ? addWorkdays(plannedEnd, tailWd) : plannedEnd
     return {
       teamId: team.id, teamName: team.name, epicId: row.id, epicName: row.name, color: row.color,
       priorityLevel: row.priorityLevel || null, items: Number(row.items || 0), laneIndex: row.laneIndex,
-      plannedStart, plannedEnd, deliveryEnd, tailWorkdays: tailWd, durationWorkdays,
+      plannedStart, plannedEnd, durationWorkdays,
     }
   })
 }
@@ -216,11 +212,10 @@ export function simulate({ teams, epics, start, focusMode }: { teams: Team[]; ep
     allRows.push(...rows)
   }
 
-  const bodyEnd = allRows.length ? new Date(Math.max(...allRows.map((r) => r.plannedEnd.getTime()))) : new Date(start)
-  const latestEnd = allRows.length ? new Date(Math.max(...allRows.map((r) => r.deliveryEnd.getTime()))) : new Date(start)
+  const latestEnd = allRows.length ? new Date(Math.max(...allRows.map((r) => r.plannedEnd.getTime()))) : new Date(start)
   const totalWorkdays = allRows.length ? countWorkdays(start, latestEnd) : 0
 
-  return { teamPlans, allRows, bodyEnd, latestEnd, totalWorkdays, totalWeeks: Math.ceil(totalWorkdays / WORKDAYS_PER_WEEK), unassignedEpics: unassigned }
+  return { teamPlans, allRows, latestEnd, totalWorkdays, totalWeeks: Math.ceil(totalWorkdays / WORKDAYS_PER_WEEK), unassignedEpics: unassigned }
 }
 
 export function formatDate(d: Date): string {

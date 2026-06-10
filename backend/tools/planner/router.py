@@ -17,7 +17,6 @@ stay interactive without a round-trip.
 from __future__ import annotations
 
 import csv
-import math
 import os
 import time
 from collections import defaultdict
@@ -29,9 +28,7 @@ from pydantic import BaseModel
 
 from config import JIRA_URL, PROJECTS, validate_project
 from mirror import get_mirror
-from tools.planner.flow_shared import (
-    all_status_cols, load_flow_config, get_months,
-)
+from tools.planner.flow_shared import get_months
 
 router = APIRouter()
 
@@ -169,95 +166,6 @@ def api_throughput(
     `window=N` for "rolling last N months anchored on today"."""
     months = _months_from_query(window, gran, years, periods)
     return _avg_over_months(_load_throughput_rows(), months, types)
-
-
-# ── Release-wait tail from flow_metrics gold ─────────────────────────────────
-
-_GOLD_FLOW = os.path.join(os.path.dirname(__file__), "../../data/gold/flow_metrics.csv")
-_flow_cache: tuple[float, list[dict]] | None = None
-_FLOW_TTL = 300
-
-
-def _load_flow_rows() -> list[dict]:
-    """Read flow_metrics.csv into memory, cached for _FLOW_TTL seconds."""
-    global _flow_cache
-    now = time.time()
-    if _flow_cache and (now - _flow_cache[0]) < _FLOW_TTL:
-        return _flow_cache[1]
-    rows: list[dict] = []
-    if os.path.exists(_GOLD_FLOW):
-        with open(_GOLD_FLOW, newline="", encoding="utf-8") as f:
-            rows = list(csv.DictReader(f))
-    _flow_cache = (now, rows)
-    return rows
-
-
-def _percentile(vals: list[float], p: int) -> Optional[float]:
-    if not vals:
-        return None
-    ordered = sorted(vals)
-    rank = max(1, math.ceil((p / 100) * len(ordered)))
-    return ordered[rank - 1]
-
-
-@router.get("/api/release-wait")
-def api_release_wait(
-    window:  Optional[int]       = Query(None, ge=1, le=24),
-    gran:    Optional[str]       = Query(None),
-    years:   List[int]           = Query(default=[]),
-    periods: List[str]           = Query(default=[]),
-    pct:     int                 = Query(85, ge=50, le=99),
-):
-    """Per-project Pxx wait-for-release days over a timeframe.
-
-    The tail = time the *last* item of an epic typically sits in the release
-    queue after every team work stage is done. Earlier idle waits (wait_testing
-    / wait_sit / wait_uat) sit *between* work stages and are already baked into
-    throughput, so they'd double-count if added at the tail — only the final
-    `wait_release` group is used.
-
-    Same timeframe semantics as /api/throughput: pass `gran/years/periods`
-    explicitly, or `window=N` for the rolling-N-months shortcut. Returns
-    calendar days; the frontend converts to workdays before applying. Uses the
-    same status-group classification as Flow Metrics (FLOW_GROUPS' wait_release
-    group, mapped via flow_config.json)."""
-    status_map = load_flow_config()
-    months   = _months_from_query(window, gran, years, periods)
-    # Only count completed months — the current month's partial sync is biased
-    # toward tickets that finished early (short-DLT survivors), which skews
-    # release-wait stats downward. See [_split_complete] for the rule.
-    complete, excluded = _split_complete(months)
-    complete_set = set(complete)
-    rows = [r for r in _load_flow_rows() if r.get('query') in complete_set]
-
-    by_project: dict[str, list[float]] = defaultdict(list)
-    for r in rows:
-        proj = r.get('project', '')
-        if not proj:
-            continue
-        wait = 0.0
-        for col in all_status_cols():
-            if status_map.get(col) == 'wait_release':
-                v = r.get(col, '')
-                if v:
-                    try:
-                        wait += float(v)
-                    except ValueError:
-                        pass
-        by_project[proj].append(wait)
-
-    release_wait_days = {
-        proj: round(_percentile(by_project.get(proj, []), pct) or 0.0, 1)
-        for proj in PROJECTS
-    }
-    counts = {proj: len(by_project.get(proj, [])) for proj in PROJECTS}
-    return {
-        'release_wait_days': release_wait_days,   # calendar days
-        'sample_sizes':      counts,
-        'months_used':       complete,
-        'months_excluded':   excluded,
-        'pct':               pct,
-    }
 
 
 # ── Mirror: list recent epics ─────────────────────────────────────────────────

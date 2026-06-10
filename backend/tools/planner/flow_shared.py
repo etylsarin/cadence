@@ -1,8 +1,8 @@
 """Flow-metrics helpers the planner depends on.
 
 Relocated from the removed Metrics tool (tools/metrics/router.py) when the
-module was cut from the registry — the planner's throughput / release-wait
-endpoints still consume the Sync gold files and the flow status→stage map.
+module was cut from the registry — the planner's throughput endpoint still
+consumes the Sync gold files and the flow status→stage map.
 The default mapping now ships with the pipeline at
 tools/sync/flow_config_default.json.
 """

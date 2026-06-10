@@ -35,10 +35,10 @@ export default function PlannerSidebar({ squad, squads, asOf = null, monthsUsed 
       icon={CalendarRange}
       header={<SquadSelector value={squad} squads={squads} onChange={onSquadChange} />}
     >
-      {/* Timeframe — drives both throughput and the release-tail percentile. */}
+      {/* Timeframe — drives the data-derived delivery pace. */}
       <div className="px-2 pt-3 pb-1">
         <div className="px-1 mb-2 text-[10px] leading-snug text-gray-500 dark:text-gray-400">
-          Pick a timeframe to derive <span className="font-medium text-gray-700 dark:text-gray-300">throughput</span> and the <span className="font-medium text-gray-700 dark:text-gray-300">release tail</span> from. Only completed months are counted.
+          Pick a timeframe to measure the squad's <span className="font-medium text-gray-700 dark:text-gray-300">delivery pace</span> (average completed items/month) from. Only completed months are counted.
         </div>
         <TimeframePicker ref={pickerRef} onChange={onPeriodChange} />
         <div className="mt-5 px-1 text-[10px] text-gray-400 leading-snug">
@@ -46,7 +46,7 @@ export default function PlannerSidebar({ squad, squads, asOf = null, monthsUsed 
             ? <>{monthsUsed} {monthsUsed === 1 ? 'month' : 'months'} in scope · latest {asOf}</>
             : <>No complete months in scope — pick a past period</>}
           {monthsExcluded > 0 && (
-            <div className="text-amber-600 dark:text-amber-500" title="Months without complete data are skipped from both throughput and the release tail.">
+            <div className="text-amber-600 dark:text-amber-500" title="Months without complete data are skipped from the pace average.">
               {monthsExcluded} {monthsExcluded === 1 ? 'month' : 'months'} skipped (incomplete / future)
             </div>
           )}
