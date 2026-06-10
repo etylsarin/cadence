@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
-import { Send, Loader2, Bot, Sparkles } from 'lucide-react'
+import { Send, Loader2, Bot, Sparkles, Search, FileText, List, Ticket, Layers, Activity, Clock, Tag, ChevronDown, ChevronRight } from 'lucide-react'
 import { marked } from 'marked'
+import DOMPurify from 'dompurify'
 import { useProject, ALL_SQUADS } from '@/hooks/useProject'
 import AppSidebar from '@/components/AppSidebar'
 import SquadSelector from '@/components/SquadSelector'
@@ -9,6 +10,15 @@ interface Message {
   role: 'user' | 'assistant'
   content: string
   thinking?: boolean
+  toolActivity?: ToolEvent[]
+}
+
+interface ToolEvent {
+  id: string
+  tool: string
+  args: Record<string, unknown>
+  summary?: string
+  isError?: boolean
 }
 
 const MONTH_OPTIONS = [
@@ -30,7 +40,77 @@ const SUGGESTIONS = [
 ]
 
 function renderMarkdown(text: string): string {
-  return marked.parse(text, { breaks: true }) as string
+  return DOMPurify.sanitize(marked.parse(text, { breaks: true }) as string)
+}
+
+const TOOL_ICONS: Record<string, React.ElementType> = {
+  grep:          Search,
+  read:          FileText,
+  list_files:    List,
+  get_ticket:    Ticket,
+  get_epic:      Layers,
+  list_sprints:  Activity,
+  get_sprint:    Activity,
+  status_at:     Clock,
+  list_versions: Tag,
+}
+
+const TOOL_LABELS: Record<string, (args: Record<string, unknown>) => string> = {
+  grep:          (a) => `searched for "${a.pattern}" in ${a.glob}`,
+  read:          (a) => `read ${a.path}`,
+  list_files:    (a) => `listed files matching ${a.glob}`,
+  get_ticket:    (a) => `fetched ticket ${a.key}`,
+  get_epic:      (a) => `fetched epic ${a.epic_key}`,
+  list_sprints:  (a) => `listed sprints for ${a.project}`,
+  get_sprint:    (a) => `fetched sprint ${a.sprint_id}`,
+  status_at:     (a) => `checked ${a.key} status on ${a.date}`,
+  list_versions: (a) => `listed versions for ${a.project}`,
+}
+
+function toolLabel(tool: string, args: Record<string, unknown>): string {
+  const fn = TOOL_LABELS[tool]
+  return fn ? fn(args) : `called ${tool}`
+}
+
+function ToolActivity({ events }: { events: ToolEvent[] }) {
+  const [expanded, setExpanded] = useState(false)
+  if (events.length === 0) return null
+
+  const pending = events[events.length - 1].summary === undefined
+
+  return (
+    <div className="mb-3">
+      <button
+        onClick={() => setExpanded((v) => !v)}
+        className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+      >
+        {expanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+        <span className="font-medium">{events.length} tool call{events.length !== 1 ? 's' : ''}</span>
+        {pending && <Loader2 className="w-3 h-3 animate-spin ml-1" />}
+      </button>
+
+      {expanded && (
+        <div className="mt-1.5 space-y-1 pl-4 border-l-2 border-gray-100 dark:border-slate-700">
+          {events.map((ev) => {
+            const Icon = TOOL_ICONS[ev.tool] ?? Search
+            const label = toolLabel(ev.tool, ev.args)
+            const done = ev.summary !== undefined
+            return (
+              <div key={ev.id} className="flex items-start gap-2 text-xs text-gray-500 dark:text-gray-400">
+                <Icon className={`w-3 h-3 mt-0.5 flex-shrink-0 ${ev.isError ? 'text-red-400' : done ? 'text-indigo-400' : 'text-gray-300'}`} />
+                <span className={done ? '' : 'opacity-60'}>
+                  {label}
+                  {done && ev.summary && (
+                    <span className="text-gray-400 dark:text-gray-500"> — {ev.summary.slice(0, 80)}{ev.summary.length > 80 ? '…' : ''}</span>
+                  )}
+                </span>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
 }
 
 export default function Ask() {
@@ -40,6 +120,7 @@ export default function Ask() {
   const [draft, setDraft] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [totalTickets, setTotalTickets] = useState<number | null>(null)
+  const [useAgent, setUseAgent] = useState(true)
 
   const messagesEnd = useRef<HTMLDivElement>(null)
   const textareaEl  = useRef<HTMLTextAreaElement>(null)
@@ -62,11 +143,37 @@ export default function Ask() {
     el.style.height = Math.min(el.scrollHeight, 140) + 'px'
   }
 
-  /** Patch the last (assistant) message — safe because sends are serialised by isLoading. */
   function patchAssistant(patch: Partial<Message>) {
     setMessages((prev) => {
       const next = prev.slice()
       next[next.length - 1] = { ...next[next.length - 1], ...patch }
+      return next
+    })
+  }
+
+  function appendToolCall(id: string, tool: string, args: Record<string, unknown>) {
+    setMessages((prev) => {
+      const next = prev.slice()
+      const last = next[next.length - 1]
+      const activity = [...(last.toolActivity ?? []), { id, tool, args }]
+      next[next.length - 1] = { ...last, toolActivity: activity, thinking: false }
+      return next
+    })
+  }
+
+  function resolveToolCall(id: string, summary: string, isError: boolean) {
+    setMessages((prev) => {
+      const next = prev.slice()
+      const last = next[next.length - 1]
+      const activity = (last.toolActivity ?? []).slice()
+      // Match by call ID so batched same-tool calls resolve independently.
+      for (let i = activity.length - 1; i >= 0; i--) {
+        if (activity[i].id === id && activity[i].summary === undefined) {
+          activity[i] = { ...activity[i], summary, isError }
+          break
+        }
+      }
+      next[next.length - 1] = { ...last, toolActivity: activity }
       return next
     })
   }
@@ -78,12 +185,18 @@ export default function Ask() {
     setDraft('')
     if (textareaEl.current) textareaEl.current.style.height = 'auto'
 
-    setMessages((prev) => [...prev, { role: 'user', content: q }, { role: 'assistant', content: '', thinking: true }])
+    setMessages((prev) => [
+      ...prev,
+      { role: 'user', content: q },
+      { role: 'assistant', content: '', thinking: true, toolActivity: [] },
+    ])
     setIsLoading(true)
     scrollToBottom()
 
+    const endpoint = useAgent ? '/ask/api/agent-chat' : '/ask/api/chat'
+
     try {
-      const res = await fetch('/ask/api/chat', {
+      const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ question: q, project: selectedProject, months: selectedMonths }),
@@ -106,7 +219,7 @@ export default function Ask() {
 
         buffer += decoder.decode(value, { stream: true })
         const lines = buffer.split('\n')
-        buffer = lines.pop() ?? '' // keep incomplete trailing line
+        buffer = lines.pop() ?? ''
 
         for (const line of lines) {
           if (!line.startsWith('data: ')) continue
@@ -114,11 +227,28 @@ export default function Ask() {
           if (raw === '[DONE]') { patchAssistant({ thinking: false }); setIsLoading(false); return }
           try {
             const evt = JSON.parse(raw)
+            // Classic endpoint
             if (evt.text)  { content += evt.text; patchAssistant({ content, thinking: false }); scrollToBottom() }
             if (evt.error) { patchAssistant({ content: `Error: ${evt.error}`, thinking: false }) }
+            // Agentic endpoint
+            if (evt.tool)      { appendToolCall(evt.id ?? evt.tool, evt.tool, evt.args ?? {}); scrollToBottom() }
+            if (evt.tool_done) { resolveToolCall(evt.id ?? evt.tool_done, evt.summary ?? '', evt.is_error ?? false) }
+            if (evt.usage)     { /* token stats — available in logs */ }
           } catch { /* partial JSON line */ }
         }
       }
+      // Clear thinking spinner and any unresolved tool-activity rows when the
+      // stream ends without an explicit [DONE] (e.g. server crash mid-loop).
+      setMessages((prev) => {
+        const next = prev.slice()
+        const last = next[next.length - 1]
+        if (!last || last.role !== 'assistant') return prev
+        const activity = (last.toolActivity ?? []).map((ev) =>
+          ev.summary === undefined ? { ...ev, summary: '(interrupted)', isError: true } : ev
+        )
+        next[next.length - 1] = { ...last, thinking: false, toolActivity: activity }
+        return next
+      })
     } catch (err) {
       patchAssistant({ content: `Error: ${(err as Error).message}`, thinking: false })
     }
@@ -148,6 +278,17 @@ export default function Ask() {
             >
               {MONTH_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
+          </div>
+
+          {/* Agent toggle */}
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-gray-500 dark:text-gray-400">Agentic mode</span>
+            <button
+              onClick={() => setUseAgent((v) => !v)}
+              className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${useAgent ? 'bg-indigo-500' : 'bg-gray-200 dark:bg-slate-600'}`}
+            >
+              <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white shadow transition-transform ${useAgent ? 'translate-x-4.5' : 'translate-x-0.5'}`} />
+            </button>
           </div>
 
           {totalTickets !== null && (
@@ -200,17 +341,20 @@ export default function Ask() {
                       <Bot className="w-4 h-4 text-gray-500 dark:text-gray-400" />
                     </div>
                     <div className="flex-1 min-w-0">
+                      {msg.toolActivity && msg.toolActivity.length > 0 && (
+                        <ToolActivity events={msg.toolActivity} />
+                      )}
                       {msg.thinking && !msg.content ? (
                         <div className="flex items-center gap-2 text-gray-400 pt-1.5">
                           <Loader2 className="w-3.5 h-3.5 animate-spin" />
                           <span className="text-sm">Thinking…</span>
                         </div>
-                      ) : (
+                      ) : msg.content ? (
                         <div
                           className="prose prose-sm dark:prose-invert max-w-none text-sm text-gray-800 dark:text-gray-200 leading-relaxed"
                           dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.content) }}
                         />
-                      )}
+                      ) : null}
                     </div>
                   </div>
                 )

@@ -1,5 +1,5 @@
 import {
-  FileText, BarChart3, RefreshCw, Sparkles, CalendarRange, Activity, ClipboardCheck,
+  FileText, BarChart3, RefreshCw, Sparkles, CalendarRange, Wand2, Activity, ClipboardCheck,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 
@@ -19,4 +19,5 @@ export const TOOL_META: Record<string, { name: string; icon: LucideIcon }> = {
   'ask':            { name: 'Ask',            icon: Sparkles },
   'sync':         { name: 'Sync Now',       icon: RefreshCw },
   'planner':        { name: 'Epic Planner',   icon: CalendarRange },
+  'prompt-builder': { name: 'Prompt Builder', icon: Wand2 },
 }

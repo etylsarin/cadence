@@ -29,6 +29,7 @@ from tools.sprint_summary.router import router as ss_router
 from tools.sync.router import router as sync_router
 from tools.ask.router import router as ask_router
 from tools.planner.router import router as planner_router
+from tools.prompt_builder.router import router as pb_router
 from tools.flow_metrics.router import router as fm_router
 from tools.hygiene.router import router as hg_router
 
@@ -52,7 +53,7 @@ _SESSION_COOKIE = "cadence_session"
 _SESSION_TTL = 7 * 24 * 3600   # one login per browser per week
 
 _PROTECTED_PREFIXES = ("/api/", "/release-notes/", "/sprint-summary/", "/sync/",
-                       "/ask/", "/planner/", "/flow-metrics/", "/hygiene/",
+                       "/ask/", "/planner/", "/prompt-builder/", "/flow-metrics/", "/hygiene/",
                        "/docs", "/openapi.json")
 _PUBLIC_PATHS = {"/api/auth", "/api/login"}
 
@@ -165,6 +166,7 @@ app.include_router(ss_router,      prefix="/sprint-summary")
 app.include_router(sync_router,  prefix="/sync")
 app.include_router(ask_router,     prefix="/ask")
 app.include_router(planner_router, prefix="/planner")
+app.include_router(pb_router,      prefix="/prompt-builder")
 app.include_router(fm_router,      prefix="/flow-metrics")
 app.include_router(hg_router,      prefix="/hygiene")
 
