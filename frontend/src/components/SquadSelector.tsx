@@ -9,7 +9,9 @@ interface Props {
 /** Pill row of squads with the active one filled in its brand color. */
 export default function SquadSelector({ value, squads, onChange }: Props) {
   return (
-    <div className="flex flex-wrap gap-1 mt-3 mb-1">
+    <div className="mt-3 mb-1">
+      <div className="text-[10px] text-gray-400 dark:text-gray-500 uppercase tracking-wide mb-1">Project</div>
+      <div className="flex flex-wrap gap-1">
       {squads.map((s) => {
         const active = value === s
         return (
@@ -29,6 +31,7 @@ export default function SquadSelector({ value, squads, onChange }: Props) {
           </button>
         )
       })}
+      </div>
     </div>
   )
 }
