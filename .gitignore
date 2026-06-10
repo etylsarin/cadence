@@ -13,6 +13,11 @@ __pycache__/
 frontend/node_modules/
 frontend/dist/
 
+# Cloudflare
+cloudflare/node_modules/
+cloudflare/dist/
+cloudflare/.wrangler/
+
 # Secrets — use .env.example as template
 .env
 
