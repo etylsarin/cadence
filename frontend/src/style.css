@@ -1,0 +1,79 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+@import "tailwindcss";
+@plugin "@tailwindcss/typography";
+
+/* Class-based dark mode for Tailwind v4 */
+@custom-variant dark (.dark &);
+
+@theme {
+  --font-sans: 'Inter', system-ui, sans-serif;
+
+  --color-sidebar: #ffffff;
+  --color-sidebar-hover: #f9fafb;
+  --color-sidebar-active: #f3f4f6;
+  --color-sidebar-border: #e5e7eb;
+
+  --color-proj-cons:   #70AD47;
+  --color-proj-engs:   #FFC000;
+  --color-proj-tras:   #7030A0;
+  --color-proj-accs:   #4472C4;
+  --color-proj-nblmnt: #C00000;
+}
+
+html, body { font-family: var(--font-sans); }
+
+html.dark body { background: #0f172a; }
+
+html.dark {
+  --color-sidebar: #1e293b;
+  --color-sidebar-hover: #334155;
+  --color-sidebar-active: #475569;
+  --color-sidebar-border: #334155;
+}
+
+/* Sidebar scrollbar */
+.sidebar-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: #d1d5db transparent;
+}
+.sidebar-scroll::-webkit-scrollbar { width: 4px; }
+.sidebar-scroll::-webkit-scrollbar-track { background: transparent; }
+.sidebar-scroll::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 2px; }
+
+/* Collapsible group transition */
+.group-items {
+  overflow: hidden;
+  transition: max-height 0.2s ease;
+}
+
+/* Spinner */
+@keyframes spin { to { transform: rotate(360deg); } }
+.spinner {
+  width: 16px; height: 16px;
+  border: 2px solid #d1d5db;
+  border-top-color: #111;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+/* ── TimeframePicker columns ───────────────────────────────────────────────
+   Was a scoped <style> in the Vue SFC; promoted to a global class for the
+   React port. The bottom-fade mask sells "there's more below"; .at-end drops
+   it once the last row is in view. */
+.col-scroll {
+  height: 64px;       /* ~4 rows tall — keeps the sidebar compact */
+  overflow-y: auto;
+  -webkit-mask-image: linear-gradient(to bottom, black calc(100% - 14px), transparent 100%);
+          mask-image: linear-gradient(to bottom, black calc(100% - 14px), transparent 100%);
+  transition: -webkit-mask-image 120ms ease, mask-image 120ms ease;
+}
+.col-scroll.at-end {
+  -webkit-mask-image: none;
+          mask-image: none;
+}
+.col-scroll::-webkit-scrollbar       { width: 3px; }
+.col-scroll::-webkit-scrollbar-track { background: transparent; }
+.col-scroll::-webkit-scrollbar-thumb { background: #e5e7eb; border-radius: 9999px; }
+.dark .col-scroll::-webkit-scrollbar-thumb { background: #475569; }
