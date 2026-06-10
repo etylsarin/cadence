@@ -1,9 +1,8 @@
-"""Flow-metrics helpers the planner depends on.
+"""Shared flow helpers: timeframe resolution and the status→stage map.
 
-Relocated from the removed Metrics tool (tools/metrics/router.py) when the
-module was cut from the registry — the planner's throughput endpoint still
-consumes the Sync gold files and the flow status→stage map.
-The default mapping now ships with the pipeline at
+Owned by the Flow Metrics tool; the planner's throughput endpoint also
+imports from here (both consume the Sync gold files and the flow
+status→stage map). The default mapping ships with the pipeline at
 tools/sync/flow_config_default.json.
 """
 
@@ -31,7 +30,10 @@ QUARTER_MONTHS = {
 
 
 def get_months(gran: str, years: list, periods: list) -> set:
-    """Resolve a gran/years/periods selection into a set of 'YYYY-MM' strings."""
+    """Resolve a gran/years/periods selection into a set of 'YYYY-MM' strings.
+
+    Unknown period values (anything outside Q1–Q4 / Jan–Dec) are skipped, so a
+    malformed query string narrows the selection instead of raising KeyError."""
     result = set()
     for y in years:
         if gran == 'Y':
@@ -39,11 +41,13 @@ def get_months(gran: str, years: list, periods: list) -> set:
                 result.add(f"{y}-{m}")
         elif gran == 'Q':
             for p in periods:
-                for m in QUARTER_MONTHS[p]:
+                for m in QUARTER_MONTHS.get(p, []):
                     result.add(f"{y}-{m}")
         else:
             for p in periods:
-                result.add(f"{y}-{MONTH_MAP[p]}")
+                m = MONTH_MAP.get(p)
+                if m:
+                    result.add(f"{y}-{m}")
     return result
 
 

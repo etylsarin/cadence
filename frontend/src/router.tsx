@@ -8,6 +8,7 @@ import ReleaseNotes from '@/views/release-notes/ReleaseNotes'
 import SprintSummary from '@/views/sprint-summary/SprintSummary'
 import Sync from '@/views/sync/Sync'
 import Planner from '@/views/planner/Planner'
+import FlowMetrics from '@/views/flow-metrics/FlowMetrics'
 
 /** Port of the Vue router's beforeEach guard — block disabled tools. */
 function RequireTool({ toolId, children }: { toolId: string; children: ReactNode }) {
@@ -28,6 +29,7 @@ export default function AppRouter() {
         <Route path="/sprint-summary" element={<RequireTool toolId="sprint-summary"><SprintSummary /></RequireTool>} />
         <Route path="/sync" element={<RequireTool toolId="sync"><Sync /></RequireTool>} />
         <Route path="/planner" element={<RequireTool toolId="planner"><Planner /></RequireTool>} />
+        <Route path="/flow-metrics" element={<RequireTool toolId="flow-metrics"><FlowMetrics /></RequireTool>} />
 
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

@@ -1,5 +1,5 @@
 import {
-  FileText, BarChart3, RefreshCw, Sparkles, CalendarRange,
+  FileText, BarChart3, RefreshCw, Sparkles, CalendarRange, Activity,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 
@@ -14,6 +14,7 @@ import type { LucideIcon } from 'lucide-react'
 export const TOOL_META: Record<string, { name: string; icon: LucideIcon }> = {
   'release-notes':  { name: 'Release Notes',  icon: FileText },
   'sprint-summary': { name: 'Sprint Summary', icon: BarChart3 },
+  'flow-metrics':   { name: 'Flow Metrics',   icon: Activity },
   'ask':            { name: 'Ask',            icon: Sparkles },
   'sync':         { name: 'Sync Now',       icon: RefreshCw },
   'planner':        { name: 'Epic Planner',   icon: CalendarRange },

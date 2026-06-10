@@ -36,6 +36,7 @@ export default defineConfig({
       '/sync/api':         'http://localhost:8765',
       '/ask/api':            'http://localhost:8765',
       '/planner/api':        'http://localhost:8765',
+      '/flow-metrics/api':   'http://localhost:8765',
     },
   },
 })
