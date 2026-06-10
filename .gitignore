@@ -1,0 +1,23 @@
+# macOS
+.DS_Store
+
+# IDE
+.vscode/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+
+# Secrets — use .env.example as template
+.env
+
+# Sync data — generated, not committed
+data/
+backend/tools/sync/logs/
+backend/tools/sync/.token
+backend/tools/sync/last_sync.txt
