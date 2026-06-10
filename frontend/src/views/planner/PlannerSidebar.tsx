@@ -21,7 +21,7 @@ export default function PlannerSidebar({ squad, squads, asOf = null, monthsUsed 
   // Hydrate the picker's earliest-year from the same range the metrics gold
   // covers, so the picker offers the full depth of history.
   useEffect(() => {
-    fetch('/metrics/api/date-range')
+    fetch('/flow-metrics/api/date-range')
       .then((r) => r.json())
       .then(({ start_date }) => {
         if (start_date && pickerRef.current) pickerRef.current.setStartYear(parseInt(start_date.slice(0, 4), 10))
