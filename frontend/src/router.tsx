@@ -5,6 +5,7 @@ import { useAccessibleTools } from '@/hooks/useAccessibleTools'
 import HomePage from '@/views/HomePage'
 import Ask from '@/views/ask/Ask'
 import ReleaseNotes from '@/views/release-notes/ReleaseNotes'
+import SprintSummary from '@/views/sprint-summary/SprintSummary'
 import Sync from '@/views/sync/Sync'
 
 /** Port of the Vue router's beforeEach guard — block disabled tools. */
@@ -23,6 +24,7 @@ export default function AppRouter() {
 
         <Route path="/ask" element={<RequireTool toolId="ask"><Ask /></RequireTool>} />
         <Route path="/release-notes" element={<RequireTool toolId="release-notes"><ReleaseNotes /></RequireTool>} />
+        <Route path="/sprint-summary" element={<RequireTool toolId="sprint-summary"><SprintSummary /></RequireTool>} />
         <Route path="/sync" element={<RequireTool toolId="sync"><Sync /></RequireTool>} />
 
         <Route path="*" element={<Navigate to="/" replace />} />

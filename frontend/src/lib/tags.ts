@@ -1,6 +1,6 @@
 /**
  * Shared tag/badge utilities (ported from useTags.js).
- * Used by TagBadge.tsx and the PPT copy export.
+ * Used by TagBadge.tsx.
  */
 
 export type TagKind = 'type' | 'priority' | 'status' | 'scope' | 'outcome' | 'project'
