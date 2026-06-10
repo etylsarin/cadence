@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "chrome-devtools": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "chrome-devtools-mcp@latest"
+      ]
+    },
+    "Jira": {
+      "url": "https://mcp.atlassian.com/v1/mcp"
+    }
+  }
+}

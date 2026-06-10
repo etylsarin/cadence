@@ -1,0 +1,48 @@
+{
+  "version": "0.35.3",
+  "ide": "claude-code",
+  "ides": [
+    "claude-code"
+  ],
+  "installedAt": "2026-06-10T17:15:18.535Z",
+  "updatedAt": "2026-06-10T17:15:18.535Z",
+  "managedPaths": {
+    "framework": [
+      "CLAUDE.md",
+      ".claude/agents/",
+      ".claude/skills/",
+      ".claude/commands/"
+    ],
+    "customizable": [
+      ".opencastle/",
+      ".mcp.json"
+    ]
+  },
+  "stack": {
+    "ides": [
+      "claude-code"
+    ],
+    "techTools": [
+      "vitest",
+      "chrome-devtools"
+    ],
+    "teamTools": [
+      "jira"
+    ]
+  },
+  "repoInfo": {
+    "deployment": [
+      "docker"
+    ],
+    "configFiles": [
+      "Dockerfile"
+    ],
+    "pm": [
+      "jira"
+    ],
+    "testing": [
+      "vitest",
+      "chrome-devtools"
+    ]
+  }
+}

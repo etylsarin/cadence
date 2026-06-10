@@ -18,3 +18,12 @@ frontend/dist/
 
 # Sync data — generated, not committed
 data/
+
+# >>> OpenCastle managed (do not edit) >>>
+CLAUDE.md
+.claude/agents/
+.claude/skills/
+.claude/commands/
+!.opencastle/
+!.mcp.json
+# <<< OpenCastle managed <<<
