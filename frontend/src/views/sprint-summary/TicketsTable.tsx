@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useMemo, useState } from 'react'
 import TagBadge from '@/components/TagBadge'
 import AppCheckbox from '@/components/AppCheckbox'
 import type { SsIssue } from './types'
@@ -17,14 +17,6 @@ function fmt(n: number | null | undefined): string {
   return Number(n) % 1 === 0 ? String(Number(n)) : Number(n).toFixed(1)
 }
 
-async function fetchPngDataUri(path: string): Promise<string> {
-  const buf = await fetch(path).then((r) => r.arrayBuffer())
-  const bytes = new Uint8Array(buf)
-  let b64 = ''
-  for (const b of bytes) b64 += String.fromCharCode(b)
-  return `data:image/png;base64,${btoa(b64)}`
-}
-
 interface Props {
   issues?: SsIssue[]
   jiraUrl?: string
@@ -37,7 +29,6 @@ export default function TicketsTable({ issues = [], jiraUrl = '' }: Props) {
   const [fApproved, setFApproved]   = useFilterPref('approved', true)
   const [fOther, setFOther]         = useFilterPref('other', true)
 
-  const [copyLabel, setCopyLabel]         = useState('Copy for PPT')
   const [copyJsonLabel, setCopyJsonLabel] = useState('Copy JSON')
 
   const visible = useMemo(() => issues.filter((i) => {
@@ -47,17 +38,6 @@ export default function TicketsTable({ issues = [], jiraUrl = '' }: Props) {
   }), [issues, fPlanned, fInjected, fDelivered, fApproved, fOther])
 
   const spTotal = useMemo(() => visible.reduce((s, i) => s + (i.points || 0), 0), [visible])
-
-  // Pre-load PPT icons so the copy handler runs synchronously within the click gesture.
-  const pngs = useRef({ spike: '', releaseTag: '', demo: '' })
-  useEffect(() => {
-    Promise.all([
-      fetchPngDataUri('/assets/pptx_spike.png'),
-      fetchPngDataUri('/assets/pptx_releasetag.png'),
-      fetchPngDataUri('/assets/pptx_demo.png'),
-    ]).then(([spike, releaseTag, demo]) => { pngs.current = { spike, releaseTag, demo } })
-      .catch(() => { /* non-critical */ })
-  }, [])
 
   function groupByEpic() {
     const epicOrder: string[] = []
@@ -77,36 +57,6 @@ export default function TicketsTable({ issues = [], jiraUrl = '' }: Props) {
     navigator.clipboard.writeText(JSON.stringify(epicOrder.map((k) => byEpic[k]), null, 2))
     setCopyJsonLabel('Copied!')
     setTimeout(() => setCopyJsonLabel('Copy JSON'), 2000)
-  }
-
-  function copyTicketTable() {
-    if (!visible.length) return
-    const { spike, releaseTag, demo } = pngs.current
-    const imgTag = (png: string, display: number) => (png ? `<img src="${png}" width="${display}" height="${display}">` : '')
-    const { epicOrder, byEpic } = groupByEpic()
-
-    const rows: string[] = []
-    let firstIssueRow = true
-    for (const epicKey of epicOrder) {
-      const { epicName, issues: epicIssues } = byEpic[epicKey]
-      rows.push(`<tr><td colspan="6" style="font-weight:bold;background:#f0f0f0">${epicName}</td></tr>`)
-      for (const i of epicIssues) {
-        const keyCell     = jiraUrl ? `<a href="${jiraUrl}/browse/${i.key}">${i.key}</a>` : i.key
-        const tl          = (i.type || '').toLowerCase()
-        const typeCell    = (firstIssueRow || tl.includes('spike')) ? imgTag(spike, 32) : ''
-        const releaseIcon = (firstIssueRow || i.fixVersion) ? imgTag(releaseTag, 24) : ''
-        const releaseDate = i.fixVersion || ''
-        const demoCell    = firstIssueRow ? imgTag(demo, 32) : ''
-        firstIssueRow     = false
-        rows.push(`<tr><td>${keyCell}</td><td>${releaseIcon}</td><td>${releaseDate}</td><td>${typeCell}</td><td>${demoCell}</td><td>${i.summary}</td></tr>`)
-      }
-    }
-
-    const html = `<table border="1" cellspacing="0" cellpadding="4">${rows.join('')}</table>`
-    const blob = new Blob([html], { type: 'text/html' })
-    navigator.clipboard.write([new ClipboardItem({ 'text/html': blob })])
-    setCopyLabel('Copied!')
-    setTimeout(() => setCopyLabel('Copy for PPT'), 2000)
   }
 
   return (
@@ -133,7 +83,6 @@ export default function TicketsTable({ issues = [], jiraUrl = '' }: Props) {
 
         <div className="ml-auto flex gap-2">
           <button className="px-3 py-1 rounded border border-gray-200 dark:border-slate-700 text-gray-600 dark:text-gray-400 hover:border-gray-900 dark:hover:border-slate-400 hover:text-gray-900 dark:hover:text-gray-100 transition-colors" onClick={copyJson}>{copyJsonLabel}</button>
-          <button className="px-3 py-1 rounded border border-gray-200 dark:border-slate-700 text-gray-600 dark:text-gray-400 hover:border-gray-900 dark:hover:border-slate-400 hover:text-gray-900 dark:hover:text-gray-100 transition-colors" onClick={copyTicketTable}>{copyLabel}</button>
         </div>
       </div>
 
