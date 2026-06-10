@@ -125,10 +125,11 @@ OPENAI_API_KEY=your_openai_api_key
 # AI_PROVIDER=anthropic        # force a provider; auto-detected when omitted
 # AI_MODEL=claude-opus-4-8     # overrides default (claude-opus-4-8 / gpt-4o)
 
-# App login (HTTP Basic) — optional. Set BOTH to require a username + password
-# on every request; leave unset for open access (local-dev default).
+# App login — optional. Set BOTH to put the app behind a login page;
+# leave unset for open access (local-dev default).
 # CADENCE_AUTH_USER=team
 # CADENCE_AUTH_PASSWORD=change-me
+# CADENCE_SESSION_SECRET=any-long-random-string   # keeps logins valid across restarts
 ```
 
 `config.env` — non-secrets, safe to commit:
@@ -330,7 +331,9 @@ Independently of the registry, **all tools except Sync Now are disabled until th
 
 ## Authentication
 
-Cadence ships with optional HTTP Basic auth. Set **both** `CADENCE_AUTH_USER` and `CADENCE_AUTH_PASSWORD` (env vars, or `.env` locally / environment variables in production) and every request requires those credentials — the browser shows a native login prompt. Leave them unset and the app is open, which is the local-dev default.
+Cadence ships with an optional login page. Set **both** `CADENCE_AUTH_USER` and `CADENCE_AUTH_PASSWORD` (env vars, or `.env` locally / environment variables in production) and the app requires a sign-in: every data route (`/api/*` and the tool APIs) returns 401 without a valid session, and the frontend shows the login page instead of the app. Leave them unset and the app is open, which is the local-dev default.
+
+Sessions are HMAC-signed cookies (7-day expiry, `httponly`, no server-side store). Set `CADENCE_SESSION_SECRET` to keep sessions valid across server restarts — without it a fresh secret is generated at boot and every restart signs everyone out.
 
 This is a single shared credential suitable for an internal tool. For per-user SSO, front the app with an authenticating reverse proxy or your platform's built-in authentication instead — the app will sit behind it unchanged.
 
