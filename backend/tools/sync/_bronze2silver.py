@@ -15,7 +15,7 @@ Empty/null fields are kept as-is.
 Usage:
   ./_bronze2silver.py              # process all, skip already up-to-date
   ./_bronze2silver.py --force      # reprocess everything
-  ./_bronze2silver.py --key ACCS-42
+  ./_bronze2silver.py --key PROJ-42
 """
 
 import argparse
@@ -171,7 +171,7 @@ def process_file(bronze_path: Path, silver_path: Path) -> str:
 # ── CLI ───────────────────────────────────────────────────────────────────────
 parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
 parser.add_argument("--force", action="store_true", help="reprocess all files even if silver is newer")
-parser.add_argument("--key", metavar="KEY", help="process a single ticket key (e.g. ACCS-42)")
+parser.add_argument("--key", metavar="KEY", help="process a single ticket key (e.g. PROJ-42)")
 args = parser.parse_args()
 
 def _print_sanit_summary():

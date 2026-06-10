@@ -21,7 +21,7 @@ from fastapi.responses import PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
 import mirror
-from config import TOOLS, ALLOWED_ORIGINS, JIRA_URL, AUTH_USER, AUTH_PASSWORD
+from config import TOOLS, ALLOWED_ORIGINS, JIRA_URL, PROJECTS, AUTH_USER, AUTH_PASSWORD
 from tools.sync.router import router as sync_router
 from tools.ask.router import router as ask_router
 
@@ -74,8 +74,9 @@ app.add_middleware(
 
 @app.get("/api/config")
 def api_config():
-    """Expose non-secret client configuration (Jira base URL for link generation)."""
-    return {"jira_url": JIRA_URL}
+    """Expose non-secret client configuration (Jira base URL for link
+    generation, project keys for squad lists and colors)."""
+    return {"jira_url": JIRA_URL, "projects": PROJECTS}
 
 
 @app.get("/api/tools")

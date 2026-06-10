@@ -7,7 +7,7 @@
 # Usage:
 #   ./sync.sh               # normal sync
 #   ./sync.sh --force       # re-download all tickets regardless of cache state
-#   ./sync.sh --key ACCS-42 # force re-download a single ticket
+#   ./sync.sh --key PROJ-42 # force re-download a single ticket
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -249,7 +249,7 @@ echo "checking deletions..."
 CNT_DELETED=0
 DELETED_KEYS=()
 
-# Build a normalised comma-list of project keys for scope checking: "CONS,TRAS,NBLMNT"
+# Build a normalised comma-list of project keys for scope checking: "KEY1,KEY2,KEY3"
 PROJECTS_NORM=$(echo "$SYNC_PROJECTS" | tr -d ' ')
 
 # O(1) lookup set: one empty file per discovered key in a tmpdir

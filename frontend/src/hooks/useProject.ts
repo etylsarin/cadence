@@ -1,9 +1,10 @@
 import { useCallback, useState } from 'react'
-import { SQUADS } from '@/constants/squads'
+import { PROJECTS, SQUADS } from '@/constants/squads'
 
-// Re-exported as a plain string[] so callers can pass it straight to components.
-export const ALL_SQUADS: string[] = [...SQUADS]
-export const PROJECTS: string[] = ALL_SQUADS.filter((s) => s !== 'ORG')
+// Re-exported so callers can pass them straight to components. These are the
+// live arrays populated at startup from /api/config (see constants/squads.ts).
+export const ALL_SQUADS: string[] = SQUADS
+export { PROJECTS }
 
 const KEY = 'cadence:project'
 

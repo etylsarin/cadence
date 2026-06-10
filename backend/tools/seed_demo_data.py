@@ -36,6 +36,11 @@ SILVER = DATA / "silver"
 BRONZE = DATA / "bronze"
 LOGS   = DATA / "logs"
 
+# Project keys come from config.env PROJECTS — the seeder generates demo data
+# for whatever projects the app is configured with.
+sys.path.insert(0, str(ROOT))
+from config import PROJECTS  # noqa: E402
+
 rng = random.Random(42)
 
 NOW         = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
@@ -43,21 +48,26 @@ START_YEAR  = 2024
 START_MONTH = datetime(START_YEAR, 1, 1, tzinfo=timezone.utc)
 
 # ── Squad profiles: distinct throughput / quality so charts differ per squad ──
-PROFILES = {
-    "ACCS":   {"stories": (5, 11), "bugs": (1, 5), "tasks": (1, 4), "spikes": (0, 1), "speed": 1.0},
-    "CONS":   {"stories": (8, 15), "bugs": (2, 6), "tasks": (2, 5), "spikes": (0, 2), "speed": 0.8},
-    "ENGS":   {"stories": (3, 8),  "bugs": (1, 4), "tasks": (1, 3), "spikes": (0, 1), "speed": 1.5},
-    "NBLMNT": {"stories": (2, 6),  "bugs": (2, 6), "tasks": (1, 3), "spikes": (0, 1), "speed": 1.2},
-    "TRAS":   {"stories": (4, 9),  "bugs": (1, 4), "tasks": (1, 4), "spikes": (0, 1), "speed": 1.1},
-}
+# Canned profile/team pools are assigned to the configured projects in order,
+# cycling if there are more projects than pool entries.
+_PROFILE_POOL = [
+    {"stories": (5, 11), "bugs": (1, 5), "tasks": (1, 4), "spikes": (0, 1), "speed": 1.0},
+    {"stories": (8, 15), "bugs": (2, 6), "tasks": (2, 5), "spikes": (0, 2), "speed": 0.8},
+    {"stories": (3, 8),  "bugs": (1, 4), "tasks": (1, 3), "spikes": (0, 1), "speed": 1.5},
+    {"stories": (2, 6),  "bugs": (2, 6), "tasks": (1, 3), "spikes": (0, 1), "speed": 1.2},
+    {"stories": (4, 9),  "bugs": (1, 4), "tasks": (1, 4), "spikes": (0, 1), "speed": 1.1},
+]
 
-ASSIGNEES = {
-    "ACCS":   ["Petra Kovacs", "Jan Dvorak", "Milos Horak", "Anna Reichel"],
-    "CONS":   ["Tomas Novak", "Lucie Svobodova", "Marek Pollak", "Eva Cerna", "David Kral"],
-    "ENGS":   ["Pavel Urban", "Karolina Mala", "Ondrej Benes"],
-    "NBLMNT": ["Jana Vlckova", "Filip Marek", "Roman Sykora"],
-    "TRAS":   ["Martin Vesely", "Tereza Hruba", "Adam Polak", "Nina Bartos"],
-}
+_TEAM_POOL = [
+    ["Petra Kovacs", "Jan Dvorak", "Milos Horak", "Anna Reichel"],
+    ["Tomas Novak", "Lucie Svobodova", "Marek Pollak", "Eva Cerna", "David Kral"],
+    ["Pavel Urban", "Karolina Mala", "Ondrej Benes"],
+    ["Jana Vlckova", "Filip Marek", "Roman Sykora"],
+    ["Martin Vesely", "Tereza Hruba", "Adam Polak", "Nina Bartos"],
+]
+
+PROFILES  = {p: _PROFILE_POOL[i % len(_PROFILE_POOL)] for i, p in enumerate(PROJECTS)}
+ASSIGNEES = {p: _TEAM_POOL[i % len(_TEAM_POOL)] for i, p in enumerate(PROJECTS)}
 
 LABELS      = ["frontend", "backend", "api", "tech-debt", "regression", "performance", "security", "ux", "infra"]
 ROOT_CAUSES = ["Code defect", "Configuration", "Data issue", "3rd party", "Missed requirement", "Environment"]
@@ -172,7 +182,8 @@ def make_changelog(created: datetime, steps: list, final_status: str):
 
 
 # Board ids per project — sprint id = board_id * 1000 + sprint number.
-BOARD_IDS = {"CONS": 1963, "ENGS": 1433, "TRAS": 1965, "ACCS": 2364, "NBLMNT": 2998}
+# Synthetic but stable: derived from the project's position in PROJECTS.
+BOARD_IDS = {p: 1001 + i for i, p in enumerate(PROJECTS)}
 
 
 def _sprint_obj(project: str, n: int) -> dict:
@@ -413,9 +424,9 @@ def generate() -> list:
         if done and len(group) >= 2:
             add_link(group[1], rng.choice(done[-20:]), LINK_TYPES[1])
 
-    # One cross-squad blocking edge
-    if stale_by_project["ACCS"] and stale_by_project["CONS"]:
-        add_link(stale_by_project["CONS"][0], stale_by_project["ACCS"][0], LINK_TYPES[0])
+    # One cross-squad blocking edge (between the first two configured projects)
+    if len(PROJECTS) >= 2 and stale_by_project[PROJECTS[0]] and stale_by_project[PROJECTS[1]]:
+        add_link(stale_by_project[PROJECTS[1]][0], stale_by_project[PROJECTS[0]][0], LINK_TYPES[0])
 
     # Recently approved-for-PROD tickets (not yet terminal) — the Sprint
     # Summary "approved" metric counts current status.

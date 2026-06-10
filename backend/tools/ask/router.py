@@ -17,7 +17,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from config import load_config
+from config import PROJECTS, load_config
 
 router = APIRouter()
 
@@ -123,7 +123,7 @@ def _format_ticket(t: dict) -> str:
 def _build_system_prompt(tickets: list, project: str, months: int) -> str:
     project_desc = (
         project if project != "ORG"
-        else "all squads (ACCS, CONS, ENGS, NBLMNT, TRAS)"
+        else f"all squads ({', '.join(PROJECTS)})"
     )
     time_desc = f"last {months} months" if months else "all time"
 

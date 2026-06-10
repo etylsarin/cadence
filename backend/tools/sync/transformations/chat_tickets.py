@@ -10,11 +10,11 @@ date, type, etc. before loading into a Claude context window.
 
 Fields kept
 -----------
-key             Jira issue key (e.g. ACCS-1234)
+key             Jira issue key (e.g. PROJ-1234)
 summary         Issue title
 description     First ~300 chars of plain text (stripped from Jira doc format)
 type            Issue type name (Story, Bug, Task, Spike, …)
-project         Project / squad key (ACCS, CONS, ENGS, NBLMNT, TRAS, …)
+project         Project / squad key (as configured in config.env PROJECTS)
 status          Current status name
 priority        Priority name (Highest, High, Medium, Low, Lowest)
 assignee        Display name of current assignee, or null

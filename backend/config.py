@@ -43,7 +43,7 @@ def _parse_env_file(path: Path) -> dict:
 
 _app_cfg = _parse_env_file(_ROOT / "config.env")
 
-PROJECTS           = [p.strip() for p in _app_cfg.get("PROJECTS", "ACCS,CONS,ENGS,NBLMNT,TRAS").split(",")]
+PROJECTS           = [p.strip() for p in _app_cfg.get("PROJECTS", "").split(",") if p.strip()]
 SYNC_ISSUE_TYPES = _app_cfg.get("SYNC_ISSUE_TYPES", "Story,Spike,Bug,Task,Epic")
 SYNC_START_DATE  = _app_cfg.get("SYNC_START_DATE", "2024-01-01")
 

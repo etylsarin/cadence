@@ -9,8 +9,8 @@ Each row represents one directed edge from source → target.
 
 Fields
 ------
-source_key          Jira key of the issue that holds the link (e.g. ACCS-123)
-target_key          Jira key of the linked issue (e.g. ACCS-456)
+source_key          Jira key of the issue that holds the link (e.g. PROJ-123)
+target_key          Jira key of the linked issue (e.g. PROJ-456)
 link_type           Link type name (e.g. "Blocks", "Dependancy")
 direction           "outward" or "inward"
 relation            Human-readable relation label (e.g. "blocks", "is blocked by")
@@ -44,7 +44,7 @@ def _ymd(iso_str: str) -> str:
 
 
 def _project_from_key(key: str) -> str:
-    """Extract project prefix from a Jira key like 'ACCS-123' → 'ACCS'."""
+    """Extract project prefix from a Jira key like 'PROJ-123' → 'PROJ'."""
     return key.split("-")[0] if "-" in key else ""
 
 
