@@ -1,7 +1,8 @@
 import type { ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ChevronLeft, Sun, Moon, type LucideIcon } from 'lucide-react'
+import { ChevronLeft, Sun, Moon, LogOut, type LucideIcon } from 'lucide-react'
 import { useDarkMode } from '@/hooks/useDarkMode'
+import { auth, logout } from '@/lib/auth'
 
 interface Props {
   title: string
@@ -42,7 +43,7 @@ export default function AppSidebar({ title, icon: Icon = null, header, children 
         {children}
       </div>
 
-      {/* Dark mode toggle */}
+      {/* Dark mode toggle + sign out */}
       <div className="shrink-0 px-4 py-3 border-t border-sidebar-border">
         <button
           onClick={toggle}
@@ -51,6 +52,15 @@ export default function AppSidebar({ title, icon: Icon = null, header, children 
           {dark ? <Sun size={13} /> : <Moon size={13} />}
           <span>{dark ? 'Light mode' : 'Dark mode'}</span>
         </button>
+        {auth.required && (
+          <button
+            onClick={() => void logout()}
+            className="flex items-center gap-2 w-full px-2 py-1.5 rounded-md text-xs text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors"
+          >
+            <LogOut size={13} />
+            <span>Sign out</span>
+          </button>
+        )}
       </div>
     </div>
   )
