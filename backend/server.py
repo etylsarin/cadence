@@ -29,6 +29,7 @@ from tools.sprint_summary.router import router as ss_router
 from tools.sync.router import router as sync_router
 from tools.ask.router import router as ask_router
 from tools.planner.router import router as planner_router
+from tools.flow_metrics.router import router as fm_router
 
 app = FastAPI(title="Cadence")
 
@@ -50,7 +51,8 @@ _SESSION_COOKIE = "cadence_session"
 _SESSION_TTL = 7 * 24 * 3600   # one login per browser per week
 
 _PROTECTED_PREFIXES = ("/api/", "/release-notes/", "/sprint-summary/", "/sync/",
-                       "/ask/", "/planner/", "/docs", "/openapi.json")
+                       "/ask/", "/planner/", "/flow-metrics/",
+                       "/docs", "/openapi.json")
 _PUBLIC_PATHS = {"/api/auth", "/api/login"}
 
 
@@ -162,6 +164,7 @@ app.include_router(ss_router,      prefix="/sprint-summary")
 app.include_router(sync_router,  prefix="/sync")
 app.include_router(ask_router,     prefix="/ask")
 app.include_router(planner_router, prefix="/planner")
+app.include_router(fm_router,      prefix="/flow-metrics")
 
 # ── Frontend (SPA) — served after `npm run build` ──────────────────────────────
 _DIST = os.path.join(os.path.dirname(__file__), "..", "frontend", "dist")

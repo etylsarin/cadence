@@ -28,7 +28,7 @@ from pydantic import BaseModel
 
 from config import JIRA_URL, PROJECTS, validate_project
 from mirror import get_mirror
-from tools.planner.flow_shared import get_months
+from tools.flow_metrics.flow_shared import get_months
 
 router = APIRouter()
 
