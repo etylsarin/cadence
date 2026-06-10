@@ -38,32 +38,20 @@ STRIP_FROM_USERS = {"accountType", "timeZone", "active"}
 
 # ── Bulk workflow-migration sanitization ──────────────────────────────────────
 #
-# On certain dates a Jira admin (Matthew Finn, accountId below) bulk-moved
-# completed tickets from legacy terminal statuses (Closed, Done) to the new
-# "Delivered" status as part of a workflow rollout.  These entries are NOT
-# organic work events — they are infrastructure changes applied retroactively
-# and corrupt flow-metrics time-in-status and throughput calculations.
+# When a Jira admin bulk-moves completed tickets between statuses as part of a
+# workflow rollout, those changelog entries are NOT organic work events — they
+# are infrastructure changes applied retroactively and corrupt flow-metrics
+# time-in-status and throughput calculations.
 #
 # Removing them here keeps the silver layer clean for all downstream consumers.
 # The raw bronze files are always preserved as the source of truth.
 #
-# To add a future migration: append a tuple (project, "YYYY-MM-DD", from, to).
-# The author check (Matt's accountId) acts as a second guard against accidental
-# removal of any legitimate same-day user transition.
+# To register a migration: append a tuple
+#   (project, "YYYY-MM-DD", from_status, to_status, admin_account_id).
+# The author check acts as a second guard against accidental removal of any
+# legitimate same-day user transition.
 
-MATT = "557058:c8e3da1c-d7d1-4914-9ca7-128a5fc7c9a2"
-
-BULK_MIGRATIONS = [
-    # ENGS — workflow migration 2025-09-02
-    ("ENGS", "2025-09-02", "Closed", "Delivered", MATT),
-    ("ENGS", "2025-09-02", "Done",   "Delivered", MATT),
-    # CONS — workflow migration 2025-12-23
-    ("CONS", "2025-12-23", "Closed", "Delivered", MATT),
-    ("CONS", "2025-12-23", "Done",   "Delivered", MATT),
-    # TRAS — workflow migration 2025-12-23
-    ("TRAS", "2025-12-23", "Closed", "Delivered", MATT),
-    ("TRAS", "2025-12-23", "Done",   "Delivered", MATT),
-]
+BULK_MIGRATIONS: list[tuple[str, str, str, str, str]] = []
 
 # Fast lookup: (project, YYYY-MM-DD, from_status, to_status, author_account_id)
 _BULK_SIG = frozenset(BULK_MIGRATIONS)
