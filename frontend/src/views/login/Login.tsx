@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { LogIn } from 'lucide-react'
 import { useDarkMode } from '@/hooks/useDarkMode'
 import { login } from '@/lib/auth'
+import CadenceLogo from '@/components/CadenceLogo'
 
 const inputCls =
   'w-full px-3 py-2 rounded-lg text-sm bg-white dark:bg-slate-800 text-gray-900 dark:text-gray-100 ' +
@@ -34,7 +35,7 @@ export default function Login() {
   return (
     <div className="min-h-screen bg-white dark:bg-slate-900 flex flex-col items-center justify-center px-5">
       <header className="text-center mb-8">
-        <img src="/assets/cadence.png" alt="Cadence logo" className="h-16 w-auto mx-auto mb-4" />
+        <CadenceLogo className="h-16 w-auto mx-auto mb-4 text-gray-950 dark:text-white" />
         <h1 className="text-2xl tracking-tight text-gray-950 dark:text-gray-100">
           <span className="font-semibold">Ca</span><span className="font-light">dence</span>
         </h1>

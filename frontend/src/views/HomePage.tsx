@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { ArrowRight, Sun, Moon, Heart, RefreshCw, AlertTriangle, LogOut } from 'lucide-react'
 import { useDarkMode } from '@/hooks/useDarkMode'
 import { auth, logout } from '@/lib/auth'
+import CadenceLogo from '@/components/CadenceLogo'
 import { TOOL_META } from '@/constants/tools'
 import type { Tool, SyncState } from '@/types'
 
@@ -74,7 +75,7 @@ export default function HomePage() {
       </div>
 
       <header className="text-center mb-12">
-        <img src="/assets/cadence.png" alt="Cadence logo" className="h-20 w-auto mx-auto mb-4" />
+        <CadenceLogo className="h-20 w-auto mx-auto mb-4 text-gray-950 dark:text-white" />
         <h1 className="text-3xl tracking-tight text-gray-950 dark:text-gray-100">
           <span className="font-semibold">Ca</span><span className="font-light">dence</span>
         </h1>
