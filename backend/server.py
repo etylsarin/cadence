@@ -26,6 +26,7 @@ from tools.release_notes.router import router as rn_router
 from tools.sprint_summary.router import router as ss_router
 from tools.sync.router import router as sync_router
 from tools.ask.router import router as ask_router
+from tools.planner.router import router as planner_router
 
 app = FastAPI(title="Cadence")
 
@@ -106,6 +107,7 @@ app.include_router(rn_router,      prefix="/release-notes")
 app.include_router(ss_router,      prefix="/sprint-summary")
 app.include_router(sync_router,  prefix="/sync")
 app.include_router(ask_router,     prefix="/ask")
+app.include_router(planner_router, prefix="/planner")
 
 # ── Frontend (SPA) — served after `npm run build` ──────────────────────────────
 _DIST = os.path.join(os.path.dirname(__file__), "..", "frontend", "dist")
