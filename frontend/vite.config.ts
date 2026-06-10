@@ -35,8 +35,9 @@ export default defineConfig({
       '/sprint-summary/api': 'http://localhost:8765',
       '/sync/api':         'http://localhost:8765',
       '/ask/api':            'http://localhost:8765',
-      '/squad-pulse/api':    'http://localhost:8765',
       '/planner/api':        'http://localhost:8765',
+      '/flow-metrics/api':   'http://localhost:8765',
+      '/prompt-builder/api': 'http://localhost:8765',
     },
   },
 })

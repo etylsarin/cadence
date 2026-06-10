@@ -1,0 +1,9 @@
+/* Keep the Gantt horizontally scrollable but hide the scrollbar chrome. */
+.gantt-scroll {
+  scrollbar-width: none;        /* Firefox */
+  -ms-overflow-style: none;     /* legacy Edge/IE */
+}
+.gantt-scroll::-webkit-scrollbar { /* WebKit/Blink */
+  width: 0;
+  height: 0;
+}

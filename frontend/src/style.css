@@ -12,12 +12,6 @@
   --color-sidebar-hover: #f9fafb;
   --color-sidebar-active: #f3f4f6;
   --color-sidebar-border: #e5e7eb;
-
-  --color-proj-cons:   #70AD47;
-  --color-proj-engs:   #FFC000;
-  --color-proj-tras:   #7030A0;
-  --color-proj-accs:   #4472C4;
-  --color-proj-nblmnt: #C00000;
 }
 
 html, body { font-family: var(--font-sans); }
