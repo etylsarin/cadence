@@ -22,6 +22,7 @@ from fastapi.staticfiles import StaticFiles
 
 import mirror
 from config import TOOLS, ALLOWED_ORIGINS, JIRA_URL, PROJECTS, AUTH_USER, AUTH_PASSWORD
+from tools.release_notes.router import router as rn_router
 from tools.sync.router import router as sync_router
 from tools.ask.router import router as ask_router
 
@@ -100,6 +101,7 @@ def api_accessible_tools():
 
 
 # ── API routers ─────────────────────────────────────────────────────────────────
+app.include_router(rn_router,      prefix="/release-notes")
 app.include_router(sync_router,  prefix="/sync")
 app.include_router(ask_router,     prefix="/ask")
 
