@@ -39,3 +39,17 @@ def complete(config: dict, messages: list, system: str = None, max_tokens: int =
 
 def stream(config: dict, messages: list, system: str = None, max_tokens: int = 2048):
     yield from _provider(config).stream(config, messages, system=system, max_tokens=max_tokens)
+
+
+def complete_with_tools(config: dict, messages: list, tools: list,
+                        system: str = None, max_tokens: int = 4096) -> dict:
+    return _provider(config).complete_with_tools(
+        config, messages, tools, system=system, max_tokens=max_tokens)
+
+
+def make_assistant_message(config: dict, result: dict) -> dict:
+    return _provider(config).make_assistant_message(result)
+
+
+def make_tool_result_message(config: dict, tool_results: list) -> list:
+    return _provider(config).make_tool_result_message(tool_results)
