@@ -23,10 +23,9 @@ npm run build    # type-check + production build to dist/
 
 ## Migration status — ✅ complete
 
-All 6 tools are ported and verified building (`tsc --noEmit` + Vite):
+All 5 tools are ported and verified building (`tsc --noEmit` + Vite):
 Home, the shared component/hook library, **Sync Now (sync)**,
-**Release Notes**, **Sprint Summary**, **Ask**, **Squad Pulse**
-(heatmap / dynamics / detail, PNG export, sparklines), and the
+**Release Notes**, **Sprint Summary**, **Ask**, and the
 **Epic Planner** (simulation engine, scope table, drag-and-drop Gantt
 timeline with lanes, release tails, and what-if scenarios).
 
