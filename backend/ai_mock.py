@@ -69,3 +69,65 @@ def stream(config: dict, messages: list, system: str = None, max_tokens: int = 2
     for word in _answer(messages).split(" "):
         yield word + " "
         time.sleep(0.01)   # visible streaming in the UI
+
+
+# ── Tool-use support ──────────────────────────────────────────────────────────
+
+_MOCK_TOOL_SCRIPT = [
+    # Turn 1: call grep to simulate a search
+    {
+        "stop_reason": "tool_use",
+        "text":        "",
+        "tool_calls":  [{"id": "mock_tc_1", "name": "grep",
+                         "input": {"pattern": "onboarding", "glob": "silver/*.json"}}],
+    },
+    # Turn 2 (after receiving tool result): produce final answer
+    {
+        "stop_reason": "end_turn",
+        "text": ("Based on the search results, there are several tickets related to onboarding. "
+                 "The most recent is ADM-1000 (New onboarding flow for billing). "
+                 "(Mock AI provider — set a real API key for production-quality answers.)"),
+        "tool_calls": [],
+    },
+]
+
+def complete_with_tools(config: dict, messages: list, tools: list,
+                        system: str = None, max_tokens: int = 4096) -> dict:
+    # Derive which script turn to use from message history length so the mock
+    # is stateless — concurrent requests no longer race on a shared counter.
+    # Turn 0: [user_question]  →  len=1
+    # Turn 1: [user_q, asst, user_tool_results]  →  len=3
+    turn = min((len(messages) - 1) // 2, len(_MOCK_TOOL_SCRIPT) - 1)
+    # When tools=[] (force-final call), always return an end_turn text response.
+    if not tools:
+        turn = len(_MOCK_TOOL_SCRIPT) - 1
+    entry = _MOCK_TOOL_SCRIPT[turn]
+
+    content: list = []
+    if entry["text"]:
+        content.append({"type": "text", "text": entry["text"]})
+    for tc in entry["tool_calls"]:
+        content.append({"type": "tool_use", "id": tc["id"], "name": tc["name"],
+                        "input": tc["input"]})
+
+    return {
+        "stop_reason": entry["stop_reason"],
+        "content":     content,
+        "text":        entry["text"],
+        "tool_calls":  list(entry["tool_calls"]),
+        "usage":       {"input_tokens": 10, "output_tokens": 20,
+                        "cache_read_input_tokens": 0},
+    }
+
+
+def make_assistant_message(result: dict) -> dict:
+    return {"role": "assistant", "content": result["content"]}
+
+
+def make_tool_result_message(tool_results: list) -> list:
+    blocks = [
+        {"type": "tool_result", "tool_use_id": r["id"], "content": r["content"],
+         **({"is_error": True} if r.get("is_error") else {})}
+        for r in tool_results
+    ]
+    return [{"role": "user", "content": blocks}]
