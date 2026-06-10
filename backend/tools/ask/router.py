@@ -1,23 +1,28 @@
 """
 Ask — Natural language Q&A over Sync gold data.
 
-Loads chat_tickets.jsonl (produced by the Sync pipeline), filters by
-project and time window, and streams a Claude response over SSE.
+Classic endpoint: /ask/api/chat  — context-stuffing single-shot completion.
+Agentic endpoint: /ask/api/agent-chat — tool-use loop over silver/gold data.
 """
 
 import json
+import logging
 import time
 import urllib.error
 from datetime import date, timedelta
 from pathlib import Path
 from typing import Optional
 
+import agent as _agent
 import ai as _ai
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from config import PROJECTS, load_config
+from tools.ask.agent_tools import TOOLS as _AGENT_TOOLS
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -194,6 +199,91 @@ def chat(body: ChatRequest):
             yield f"data: {json.dumps({'error': f'AI API error {e.code}: {err}'})}\n\n"
         except Exception as e:
             yield f"data: {json.dumps({'error': str(e)})}\n\n"
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(sse_stream(), media_type="text/event-stream")
+
+
+# ── Agentic endpoint ───────────────────────────────────────────────────────────
+
+def _agent_system_prompt(project: str, months: int) -> str:
+    project_scope = (
+        project if project != "ORG"
+        else f"all squads ({', '.join(PROJECTS)})"
+    )
+    time_scope = f"last {months} months" if months else "all time"
+    projects_str = ", ".join(PROJECTS)
+
+    return f"""You are an AI assistant helping a software delivery team analyse their Jira project data.
+
+SCOPE: {project_scope}, {time_scope}.
+PROJECTS: {projects_str}
+
+DATA LAYOUT
+- silver/<KEY>.json — one file per ticket, full fields + changelog (Jira format)
+- gold/*.csv|jsonl — pre-computed metrics (flow_metrics.csv, throughput.csv, completed_tickets.csv, etc.)
+
+SILVER TICKET SHAPE
+  key, fields.{{summary, issuetype.name, status.name, priority.name, assignee.displayName,
+  created, updated, labels, description, customfield_10007 (sprints list),
+  customfield_10008 (epic link), fixVersions}}, changelog.histories
+
+HOW TO ANSWER
+1. Use tools to search and read data — do not guess from memory.
+2. Reference specific ticket keys (e.g. ADM-1000) when citing evidence.
+3. Stop and answer once you have enough evidence; do not exhaustively read every file.
+4. Use markdown formatting for the final answer.
+5. If the data does not support a conclusion, say so clearly."""
+
+
+@router.post("/api/agent-chat")
+def agent_chat(body: ChatRequest):
+    import mirror as _mirror_mod
+    config = load_config()
+
+    if not _mirror_mod.is_synced():
+        raise HTTPException(503, "No synced data found — run the Sync pipeline first")
+
+    system = _agent_system_prompt(body.project, body.months)
+
+    def sse_stream():
+        start = time.time()
+        iterations = 0
+        tools_called: list[str] = []
+
+        try:
+            for event in _agent.run_agent(config, body.question, _AGENT_TOOLS, system):
+                etype = event.get("type")
+
+                if etype == "tool_call":
+                    iterations += 1
+                    tools_called.append(event["tool"])
+                    yield f"data: {json.dumps({'tool': event['tool'], 'id': event.get('id'), 'args': event['args']})}\n\n"
+
+                elif etype == "tool_result_summary":
+                    summary = event.get("summary", "")
+                    yield f"data: {json.dumps({'tool_done': event['tool'], 'id': event.get('id'), 'summary': summary, 'is_error': event.get('is_error', False)})}\n\n"
+
+                elif etype == "text":
+                    if event.get("text"):
+                        yield f"data: {json.dumps({'text': event['text']})}\n\n"
+
+                elif etype == "done":
+                    usage = event.get("usage", {})
+                    yield f"data: {json.dumps({'usage': usage})}\n\n"
+                    logger.info(
+                        "agent-chat done: %.1fs, %d tool calls (%s), tokens=%s",
+                        time.time() - start, iterations,
+                        ",".join(tools_called) or "none", usage,
+                    )
+
+        except urllib.error.HTTPError as e:
+            err = e.read().decode()
+            yield f"data: {json.dumps({'error': f'AI API error {e.code}: {err}'})}\n\n"
+        except Exception as e:
+            logger.exception("agent-chat error")
+            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+
         yield "data: [DONE]\n\n"
 
     return StreamingResponse(sse_stream(), media_type="text/event-stream")
