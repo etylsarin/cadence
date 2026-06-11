@@ -10,13 +10,17 @@ Only the AI generation step leaves the machine.
 import logging
 from typing import Optional
 
+from config import PROJECTS, load_config, validate_numeric_id, validate_project
 from fastapi import APIRouter, HTTPException, Query
+from mirror import get_mirror
 from pydantic import BaseModel
 
-from config import PROJECTS, load_config, validate_numeric_id, validate_project
-from mirror import get_mirror
 from tools.release_notes.adf import field_text
-from tools.release_notes.claude import build_prompt, generate_with_ai, regenerate_section
+from tools.release_notes.claude import (
+    build_prompt,
+    generate_with_ai,
+    regenerate_section,
+)
 
 # Default project for query params — first key from config.env PROJECTS.
 DEFAULT_PROJECT = PROJECTS[0] if PROJECTS else ""
@@ -27,7 +31,13 @@ log = logging.getLogger(__name__)
 
 # ── Mirror data helpers ────────────────────────────────────────────────────────
 
-def get_versions(project: str, include_unreleased: bool = True, include_released: bool = False, include_archived: bool = False) -> list:
+
+def get_versions(
+    project: str,
+    include_unreleased: bool = True,
+    include_released: bool = False,
+    include_archived: bool = False,
+) -> list:
     versions = []
     for v in get_mirror().versions.values():
         if project != "ALL" and v["project"] != project:
@@ -43,36 +53,50 @@ def get_versions(project: str, include_unreleased: bool = True, include_released
                 "released": v["released"],
             })
     # No date → top, then by releaseDate descending (most recent first)
-    versions.sort(key=lambda v: (1, -(int(v["releaseDate"].replace("-", "")))) if v["releaseDate"] else (0, 0))
+    versions.sort(
+        key=lambda v: (
+            (1, -(int(v["releaseDate"].replace("-", ""))))
+            if v["releaseDate"]
+            else (0, 0)
+        )
+    )
     return versions
 
 
 def _version_record(version_id: str) -> dict:
     v = get_mirror().versions.get(version_id)
     if not v:
-        raise HTTPException(status_code=404, detail=f"Version {version_id} not found in the synced mirror")
+        raise HTTPException(
+            status_code=404,
+            detail=f"Version {version_id} not found in the synced mirror",
+        )
     return v
 
 
 def _issues_for(version_id: str) -> list:
     tickets = sorted(
         get_mirror().issues_by_version.get(version_id, []),
-        key=lambda t: (((t.get("fields") or {}).get("issuetype") or {}).get("name", ""), t.get("key", "")),
+        key=lambda t: (
+            ((t.get("fields") or {}).get("issuetype") or {}).get("name", ""),
+            t.get("key", ""),
+        ),
     )
     issues = []
     for t in tickets:
         f = t.get("fields") or {}
-        issues.append({
-            "key":             t.get("key", ""),
-            "summary":         f.get("summary", ""),
-            "type":            (f.get("issuetype") or {}).get("name", ""),
-            "status":          (f.get("status") or {}).get("name", ""),
-            "priority":        (f.get("priority") or {}).get("name", "None") or "None",
-            "description":     field_text(f, "description"),
-            "biz_context":     field_text(f, "customfield_12174"),
-            "steps_actual_expected": field_text(f, "customfield_12864"),
-            "expected_behavior":     field_text(f, "customfield_12830"),
-        })
+        issues.append(
+            {
+                "key": t.get("key", ""),
+                "summary": f.get("summary", ""),
+                "type": (f.get("issuetype") or {}).get("name", ""),
+                "status": (f.get("status") or {}).get("name", ""),
+                "priority": (f.get("priority") or {}).get("name", "None") or "None",
+                "description": field_text(f, "description"),
+                "biz_context": field_text(f, "customfield_12174"),
+                "steps_actual_expected": field_text(f, "customfield_12864"),
+                "expected_behavior": field_text(f, "customfield_12830"),
+            }
+        )
     return issues
 
 
@@ -89,20 +113,21 @@ def _version_info(version_id: str, project: str = "") -> dict:
 
 # ── Routes ─────────────────────────────────────────────────────────────────────
 
+
 @router.get("/api/versions")
 def api_versions(
-    project:    str  = Query(DEFAULT_PROJECT),
+    project: str = Query(DEFAULT_PROJECT),
     unreleased: bool = Query(True),
-    released:   bool = Query(False),
-    limit:      int  = Query(10),
-    offset:     int  = Query(0),
+    released: bool = Query(False),
+    limit: int = Query(10),
+    offset: int = Query(0),
 ):
     if project != "ALL":
         validate_project(project)
     all_items = get_versions(project, unreleased, released)
     return {
-        "items":   all_items[offset:offset + limit],
-        "total":   len(all_items),
+        "items": all_items[offset : offset + limit],
+        "total": len(all_items),
         "hasMore": offset + limit < len(all_items),
     }
 
@@ -137,8 +162,8 @@ class GenerateRequest(BaseModel):
 class RegenerateRequest(BaseModel):
     version_id: str
     project: Optional[str] = ""
-    section: str            # "short" | "full" | "biz"
-    current: str            # current text of that section
+    section: str  # "short" | "full" | "biz"
+    current: str  # current text of that section
     instruction: Optional[str] = ""
 
 
@@ -180,7 +205,14 @@ def api_regenerate_section(req: RegenerateRequest):
     try:
         version_info = _version_info(req.version_id, req.project)
         issues = _issues_for(req.version_id)
-        text = regenerate_section(config, version_info, issues, req.section, req.current, req.instruction or "")
+        text = regenerate_section(
+            config,
+            version_info,
+            issues,
+            req.section,
+            req.current,
+            req.instruction or "",
+        )
         return {"text": text}
     except HTTPException:
         raise

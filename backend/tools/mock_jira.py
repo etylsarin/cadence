@@ -3,7 +3,7 @@
 mock_jira.py — Offline Jira API stand-in for the Sync pipeline.
 
 All tools read exclusively from the synced local mirror, so the only Jira
-consumer left is the Sync pipeline (backend/tools/sync/_gettickets.sh). This
+consumer left is the Sync pipeline (backend/tools/sync/_gettickets.py). This
 server provides exactly the two endpoints it calls, backed by a deterministic
 ticket corpus generated in-memory at startup by seed_demo_data.generate()
 (includes Epics, open backlog, sprints, fix versions — no data/ needed).
@@ -35,11 +35,13 @@ app = FastAPI(title="Mock Jira (generated corpus)")
 _tickets = sorted(generate(), key=lambda t: t.get("key", ""))
 _by_key = {t.get("key", ""): t for t in _tickets}
 
-print(f"mock_jira: serving {len(_tickets)} generated issues "
-      f"({sum(1 for t in _tickets if t['fields']['issuetype']['name'] == 'Epic')} epics)")
+print(
+    f"mock_jira: serving {len(_tickets)} generated issues "
+    f"({sum(1 for t in _tickets if t['fields']['issuetype']['name'] == 'Epic')} epics)"
+)
 
 _DISCOVERY_RE = re.compile(
-    r'project\s+in\s*\(([^)]*)\)\s+AND\s+issuetype\s+in\s*\(([^)]*)\)'
+    r"project\s+in\s*\(([^)]*)\)\s+AND\s+issuetype\s+in\s*\(([^)]*)\)"
     r'\s+AND\s+created\s*>=\s*"([^"]+)"',
     re.IGNORECASE,
 )
@@ -48,20 +50,30 @@ _DISCOVERY_RE = re.compile(
 def _run_jql(jql: str) -> list:
     m = _DISCOVERY_RE.search(jql or "")
     if not m:
-        raise HTTPException(status_code=400, detail=f"mock_jira: unsupported JQL: {jql!r}")
+        raise HTTPException(
+            status_code=400, detail=f"mock_jira: unsupported JQL: {jql!r}"
+        )
     projects = {p.strip().strip('"') for p in m.group(1).split(",") if p.strip()}
-    types    = {t.strip().strip('"') for t in m.group(2).split(",") if t.strip()}
-    since    = m.group(3)
+    types = {t.strip().strip('"') for t in m.group(2).split(",") if t.strip()}
+    since = m.group(3)
     out = []
     for t in _tickets:
         f = t.get("fields", {})
-        if ((f.get("project") or {}).get("key", "") in projects
-                and (f.get("issuetype") or {}).get("name", "") in types
-                and f.get("created", "")[:10] >= since):
-            out.append({"key": t.get("key", ""),
-                        "fields": {"created": f.get("created", ""),
-                                   "updated": f.get("updated", "")}})
-    out.sort(key=lambda i: i["fields"]["created"])      # ORDER BY created ASC
+        if (
+            (f.get("project") or {}).get("key", "") in projects
+            and (f.get("issuetype") or {}).get("name", "") in types
+            and f.get("created", "")[:10] >= since
+        ):
+            out.append(
+                {
+                    "key": t.get("key", ""),
+                    "fields": {
+                        "created": f.get("created", ""),
+                        "updated": f.get("updated", ""),
+                    },
+                }
+            )
+    out.sort(key=lambda i: i["fields"]["created"])  # ORDER BY created ASC
     return out
 
 
@@ -78,7 +90,7 @@ def search_jql(body: JqlSearch):
     # Real-Jira pagination: maxResults per page, opaque nextPageToken (offset).
     start = int(body.nextPageToken) if body.nextPageToken else 0
     page_size = max(1, body.maxResults)
-    page = issues[start:start + page_size]
+    page = issues[start : start + page_size]
     out = {"issues": page}
     if start + page_size < len(issues):
         out["nextPageToken"] = str(start + page_size)
@@ -89,7 +101,7 @@ def search_jql(body: JqlSearch):
 
 @app.get("/rest/api/3/issue/{key}")
 def issue_detail(key: str, expand: str = ""):
-    """Full raw issue (fields + changelog) — what _gettickets.sh downloads."""
+    """Full raw issue (fields + changelog) — what _gettickets.py downloads."""
     t = _by_key.get(key)
     if not t:
         raise HTTPException(status_code=404, detail=f"Issue {key} not found")

@@ -1,0 +1,30 @@
+# Secrets — must never be baked into the image (injected as env vars at runtime)
+.env
+.env.*
+
+# Version control / docs
+.git
+.gitignore
+*.md
+
+# Synced data — provided at runtime via the volume / R2 mount
+backend/data/
+
+# Python caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+
+# Node / frontend build artefacts (frontend is rebuilt inside the image)
+node_modules/
+frontend/node_modules/
+frontend/dist/
+
+# Cloudflare Worker tooling — not needed in the container image
+cloudflare/
+
+# Editor / OS noise
+.vscode/
+.idea/
+*.log

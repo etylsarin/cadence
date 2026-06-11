@@ -10,9 +10,8 @@ from each ticket's changelog — no live Jira calls.
 
 import logging
 
-from fastapi import APIRouter, HTTPException, Query
-
 from config import PROJECTS, load_config, validate_numeric_id, validate_project
+from fastapi import APIRouter, HTTPException, Query
 from mirror import TERMINAL_STATUSES, get_mirror, status_at
 
 # Default project for query params — first key from config.env PROJECTS.
@@ -25,6 +24,7 @@ STATUS_COMPLETED = "Approved for PROD env"
 
 
 # ── Sprint data helpers ────────────────────────────────────────────────────────
+
 
 def get_sprints(project: str) -> list:
     m = get_mirror()
@@ -67,31 +67,35 @@ def get_sprint_summary(project: str, sprint_id: str) -> dict:
     if not sprint or (project != "ALL" and sprint["_project"] != project):
         raise ValueError(f"Sprint {sprint_id} not found for {project}")
 
-    start  = sprint.get("startDate", "")
+    start = sprint.get("startDate", "")
     cutoff = sprint.get("completeDate", "") or sprint.get("endDate", "")
 
     all_issues = []
     for t in sprint["_tickets"]:
-        f   = t.get("fields") or {}
+        f = t.get("fields") or {}
         key = t.get("key", "")
 
-        status_at_end  = status_at(t, cutoff)
+        status_at_end = status_at(t, cutoff)
         current_status = (f.get("status") or {}).get("name", "")
-        delivered      = status_at_end in TERMINAL_STATUSES
-        approved       = current_status == STATUS_COMPLETED
+        delivered = status_at_end in TERMINAL_STATUSES
+        approved = current_status == STATUS_COMPLETED
 
         # Carried over: member of a later sprint and not done in this one.
         later = any(
-            isinstance(sp, dict) and isinstance(sp.get("id"), int) and sp["id"] > sprint["id"]
+            isinstance(sp, dict)
+            and isinstance(sp.get("id"), int)
+            and sp["id"] > sprint["id"]
             for sp in f.get("customfield_10007") or []
         )
-        removed  = (not delivered) and later
+        removed = (not delivered) and later
         injected = bool(start) and f.get("created", "") > start
 
-        pts  = _points(f.get("customfield_10005"))
-        ek   = f.get("customfield_10008") or ((f.get("parent") or {}).get("key", "")) or ""
+        pts = _points(f.get("customfield_10005"))
+        ek = (
+            f.get("customfield_10008") or ((f.get("parent") or {}).get("key", "")) or ""
+        )
         epic = m.epics.get(ek)
-        fv   = (f.get("fixVersions") or [{}])[0]
+        fv = (f.get("fixVersions") or [{}])[0]
 
         all_issues.append({
             "key":         key,
@@ -113,55 +117,55 @@ def get_sprint_summary(project: str, sprint_id: str) -> dict:
 
     all_issues.sort(key=lambda i: i["key"])
 
-    points_map     = {i["key"]: i["points"] for i in all_issues}
-    all_keys       = set(points_map)
-    injected_keys  = {i["key"] for i in all_issues if i["injected"]}
-    planned_keys   = all_keys - injected_keys
+    points_map = {i["key"]: i["points"] for i in all_issues}
+    all_keys = set(points_map)
+    injected_keys = {i["key"] for i in all_issues if i["injected"]}
+    planned_keys = all_keys - injected_keys
     delivered_keys = {i["key"] for i in all_issues if i["delivered"]}
-    approved_keys  = {i["key"] for i in all_issues if i["approved"]}
+    approved_keys = {i["key"] for i in all_issues if i["approved"]}
     completed_keys = delivered_keys | approved_keys
 
     def _metric(keys, available=True):
         pts = sum(points_map.get(k, 0.0) for k in keys)
         return {
-            "count":     len(keys),
-            "points":    int(pts) if pts == int(pts) else pts,
+            "count": len(keys),
+            "points": int(pts) if pts == int(pts) else pts,
             "available": available,
-            "keys":      sorted(keys),
+            "keys": sorted(keys),
         }
 
     config = load_config()
     return {
         "sprint": {
-            "id":           sprint["id"],
-            "name":         sprint["name"],
-            "state":        sprint["state"],
-            "startDate":    sprint.get("startDate", ""),
-            "endDate":      sprint.get("endDate", ""),
+            "id": sprint["id"],
+            "name": sprint["name"],
+            "state": sprint["state"],
+            "startDate": sprint.get("startDate", ""),
+            "endDate": sprint.get("endDate", ""),
             "completeDate": sprint.get("completeDate", ""),
-            "goal":         sprint.get("goal", ""),
+            "goal": sprint.get("goal", ""),
         },
-        "boardId":     sprint["id"] // 1000,
+        "boardId": sprint["id"] // 1000,
         "data_source": "mirror",
-        "jiraUrl":     config.get("JIRA_URL", "").rstrip("/"),
-        "issues":      all_issues,
+        "jiraUrl": config.get("JIRA_URL", "").rstrip("/"),
+        "issues": all_issues,
         "rows": {
             "planned": {
                 **_metric(planned_keys),
                 "delivered": _metric(planned_keys & delivered_keys),
-                "approved":  _metric(planned_keys & approved_keys),
+                "approved": _metric(planned_keys & approved_keys),
                 "completed": _metric(planned_keys & completed_keys),
             },
             "injected": {
                 **_metric(injected_keys),
                 "delivered": _metric(injected_keys & delivered_keys),
-                "approved":  _metric(injected_keys & approved_keys),
+                "approved": _metric(injected_keys & approved_keys),
                 "completed": _metric(injected_keys & completed_keys),
             },
             "total": {
                 **_metric(all_keys),
                 "delivered": _metric(delivered_keys),
-                "approved":  _metric(approved_keys),
+                "approved": _metric(approved_keys),
                 "completed": _metric(completed_keys),
             },
         },
@@ -192,16 +196,16 @@ def api_squads(project: str = Query(DEFAULT_PROJECT)):
 @router.get("/api/sprints")
 def api_sprints(
     project: str = Query(DEFAULT_PROJECT),
-    limit:   int = Query(10),
-    offset:  int = Query(0),
+    limit: int = Query(10),
+    offset: int = Query(0),
 ):
     if project != "ALL":
         validate_project(project)
     try:
         all_items = get_sprints(project)
         return {
-            "items":   all_items[offset:offset + limit],
-            "total":   len(all_items),
+            "items": all_items[offset : offset + limit],
+            "total": len(all_items),
             "hasMore": offset + limit < len(all_items),
         }
     except Exception:

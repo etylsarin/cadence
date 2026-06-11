@@ -10,7 +10,7 @@ RUN npm run build
 
 # Stage 2: Python app
 FROM python:3.13-slim
-RUN apt-get update && apt-get install -y --no-install-recommends jq curl fuse s3fs && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends fuse s3fs && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY backend/requirements.txt ./backend/requirements.txt
 RUN pip install --no-cache-dir -r backend/requirements.txt

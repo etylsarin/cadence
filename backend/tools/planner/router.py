@@ -23,7 +23,9 @@ from collections import defaultdict
 from datetime import date
 from typing import List, Optional
 
+from config import JIRA_URL, PROJECTS, validate_project
 from fastapi import APIRouter, HTTPException, Query
+from mirror import get_mirror
 from pydantic import BaseModel
 
 from config import JIRA_URL, PROJECTS, validate_project
@@ -35,7 +37,9 @@ router = APIRouter()
 
 # ── Throughput from gold ──────────────────────────────────────────────────────
 
-_GOLD_THROUGHPUT = os.path.join(os.path.dirname(__file__), "../../data/gold/throughput.csv")
+_GOLD_THROUGHPUT = os.path.join(
+    os.path.dirname(__file__), "../../data/gold/throughput.csv"
+)
 
 _throughput_cache: tuple[float, list[dict]] | None = None
 _THROUGHPUT_TTL = 300  # 5 min
@@ -53,12 +57,14 @@ def _load_throughput_rows() -> list[dict]:
         with open(_GOLD_THROUGHPUT, newline="", encoding="utf-8") as f:
             for r in csv.DictReader(f):
                 try:
-                    rows.append({
-                        "month":   r.get("query", ""),         # YYYY-MM
-                        "project": r.get("project", ""),
-                        "type":    r.get("type", ""),
-                        "count":   int(r.get("count", "0") or 0),
-                    })
+                    rows.append(
+                        {
+                            "month": r.get("query", ""),  # YYYY-MM
+                            "project": r.get("project", ""),
+                            "type": r.get("type", ""),
+                            "count": int(r.get("count", "0") or 0),
+                        }
+                    )
                 except ValueError:
                     continue
     _throughput_cache = (now, rows)
@@ -88,7 +94,9 @@ def _split_complete(months: set[str]) -> tuple[list[str], list[str]]:
     return complete, excluded
 
 
-def _avg_over_months(rows: list[dict], selected_months: set[str], types: list[str] | None) -> dict:
+def _avg_over_months(
+    rows: list[dict], selected_months: set[str], types: list[str] | None
+) -> dict:
     """Average items/month per project over an arbitrary set of months.
 
     Only *complete* months are counted (see [_split_complete]) — the current
@@ -113,21 +121,23 @@ def _avg_over_months(rows: list[dict], selected_months: set[str], types: list[st
     # don't see "8" in one place and "8.3" in the other for the same number.
     items_per_month: dict[str, int] = {}
     for proj in PROJECTS:
-        items_per_month[proj] = round(counts_by_proj.get(proj, 0) / n_months) if complete else 0
+        items_per_month[proj] = (
+            round(counts_by_proj.get(proj, 0) / n_months) if complete else 0
+        )
 
     return {
         "items_per_month": items_per_month,
-        "months_window":   len(complete),
-        "as_of":           complete[-1] if complete else None,
-        "months_used":     complete,
-        "months_excluded": excluded,   # incomplete (current) and future months the picker offered
+        "months_window": len(complete),
+        "as_of": complete[-1] if complete else None,
+        "months_used": complete,
+        "months_excluded": excluded,  # incomplete (current) and future months the picker offered
     }
 
 
 def _months_from_query(
     window: Optional[int],
-    gran:   Optional[str],
-    years:  list[int],
+    gran: Optional[str],
+    years: list[int],
     periods: list[str],
 ) -> set[str]:
     """Resolve a planner-style timeframe payload into a set of YYYY-MM months.
@@ -153,11 +163,11 @@ def _months_from_query(
 
 @router.get("/api/throughput")
 def api_throughput(
-    window:  Optional[int]       = Query(None, ge=1, le=24),
-    gran:    Optional[str]       = Query(None),
-    years:   List[int]           = Query(default=[]),
-    periods: List[str]           = Query(default=[]),
-    types:   List[str]           = Query(default=["Story", "Bug", "Task", "Spike"]),
+    window: Optional[int] = Query(None, ge=1, le=24),
+    gran: Optional[str] = Query(None),
+    years: List[int] = Query(default=[]),
+    periods: List[str] = Query(default=[]),
+    types: List[str] = Query(default=["Story", "Bug", "Task", "Spike"]),
 ):
     """Per-project items/month over a timeframe.
 
@@ -172,7 +182,12 @@ def api_throughput(
 
 # Completed epics are never useful for planning future work.
 _EXCLUDED_EPIC_STATUSES = {
-    "Done", "Closed", "Rejected", "Delivered", "Cancelled", "Won't Do",
+    "Done",
+    "Closed",
+    "Rejected",
+    "Delivered",
+    "Cancelled",
+    "Won't Do",
     "Approved for PROD env",
 }
 
@@ -213,7 +228,7 @@ def api_epics(
         f = t.get("fields") or {}
         if project != "ALL" and ((f.get("project") or {}).get("key", "")) != project:
             continue
-        status = ((f.get("status") or {}).get("name", "") or "")
+        status = (f.get("status") or {}).get("name", "") or ""
         if status in _EXCLUDED_EPIC_STATUSES:
             continue
         by_status: dict[str, int] = defaultdict(int)
@@ -239,6 +254,7 @@ def api_epics(
 
 
 # ── Mirror: fetch children of selected epics ──────────────────────────────────
+
 
 class EpicChildrenRequest(BaseModel):
     epic_keys: list[str]
@@ -271,7 +287,9 @@ def api_epic_children(req: EpicChildrenRequest):
     keys = [k.strip().upper() for k in req.epic_keys if k and k.strip()]
     bad = [k for k in keys if not _EPIC_KEY_RE.match(k)]
     if bad:
-        raise HTTPException(status_code=400, detail=f"Invalid epic key(s): {', '.join(bad)}")
+        raise HTTPException(
+            status_code=400, detail=f"Invalid epic key(s): {', '.join(bad)}"
+        )
     if not keys:
         return {"epics": [], "all_statuses": []}
 
@@ -290,18 +308,23 @@ def api_epic_children(req: EpicChildrenRequest):
         for c in kids:
             status_breakdown[c["status"]] += 1
             all_statuses[c["status"]] += 1
-        epics_out.append({
-            "key":              k,
-            "project":          k.split("-")[0] if "-" in k else "",
-            "children":         kids,
-            "status_breakdown": dict(status_breakdown),
-            "total":            len(kids),
-        })
+        epics_out.append(
+            {
+                "key": k,
+                "project": k.split("-")[0] if "-" in k else "",
+                "children": kids,
+                "status_breakdown": dict(status_breakdown),
+                "total": len(kids),
+            }
+        )
 
     return {
-        "epics":        epics_out,
-        "all_statuses": [{"name": s, "count": c} for s, c in sorted(all_statuses.items(), key=lambda kv: -kv[1])],
-        "jira_url":     JIRA_URL,
+        "epics": epics_out,
+        "all_statuses": [
+            {"name": s, "count": c}
+            for s, c in sorted(all_statuses.items(), key=lambda kv: -kv[1])
+        ],
+        "jira_url": JIRA_URL,
     }
 
 

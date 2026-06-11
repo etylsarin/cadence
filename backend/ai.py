@@ -18,13 +18,16 @@ def _provider(config: dict):
             provider = "openai"
     if provider == "anthropic":
         import ai_anthropic
+
         return ai_anthropic
     if provider == "openai":
         import ai_openai
+
         return ai_openai
     if provider == "mock":
         # Offline demo provider (deterministic canned output) — see ai_mock.py.
         import ai_mock
+
         return ai_mock
     raise ValueError(
         "No AI provider configured. Set ANTHROPIC_API_KEY or OPENAI_API_KEY "
@@ -33,8 +36,12 @@ def _provider(config: dict):
     )
 
 
-def complete(config: dict, messages: list, system: str = None, max_tokens: int = 4096) -> str:
-    return _provider(config).complete(config, messages, system=system, max_tokens=max_tokens)
+def complete(
+    config: dict, messages: list, system: str = None, max_tokens: int = 4096
+) -> str:
+    return _provider(config).complete(
+        config, messages, system=system, max_tokens=max_tokens
+    )
 
 
 def stream(config: dict, messages: list, system: str = None, max_tokens: int = 2048):

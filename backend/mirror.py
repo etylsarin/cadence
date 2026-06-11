@@ -14,8 +14,8 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Optional
 
-_DATA      = Path(__file__).resolve().parent / "data"
-_SILVER    = _DATA / "silver"
+_DATA = Path(__file__).resolve().parent / "data"
+_SILVER = _DATA / "silver"
 _LAST_SYNC = _DATA / "last_sync.txt"
 
 TERMINAL_STATUSES = {"Closed", "Done", "Rejected", "Delivered"}
@@ -23,15 +23,20 @@ TERMINAL_STATUSES = {"Closed", "Done", "Rejected", "Delivered"}
 
 # ── Changelog helpers ─────────────────────────────────────────────────────────
 
+
 def status_transitions(ticket: dict) -> list:
     """[(iso_ts, from_status, to_status)] sorted chronologically."""
     out = []
     for h in (ticket.get("changelog") or {}).get("histories") or []:
         for item in h.get("items") or []:
             if item.get("field") == "status":
-                out.append((h.get("created", ""),
-                            item.get("fromString", "") or "",
-                            item.get("toString", "") or ""))
+                out.append(
+                    (
+                        h.get("created", ""),
+                        item.get("fromString", "") or "",
+                        item.get("toString", "") or "",
+                    )
+                )
     out.sort(key=lambda x: x[0])
     return out
 
@@ -42,7 +47,7 @@ def status_at(ticket: dict, cutoff_iso: str) -> str:
     trans = status_transitions(ticket)
     if not trans:
         return current
-    cur = trans[0][1] or current        # status before the first transition
+    cur = trans[0][1] or current  # status before the first transition
     for ts, _frm, to in trans:
         if not cutoff_iso or ts <= cutoff_iso:
             cur = to
@@ -51,16 +56,17 @@ def status_at(ticket: dict, cutoff_iso: str) -> str:
 
 # ── The index ─────────────────────────────────────────────────────────────────
 
+
 class Mirror:
     def __init__(self, tickets: list):
         self.tickets = tickets
         self.by_key: dict = {}
-        self.versions: dict = {}                       # version id → record
-        self.issues_by_version = defaultdict(list)     # version id → [ticket]
-        self.sprints: dict = {}                        # sprint id → record (+_tickets)
-        self.sprints_by_project = defaultdict(list)    # project → [sprint id]
-        self.epics: dict = {}                          # epic key → epic ticket
-        self.children_by_epic = defaultdict(list)      # epic key → [ticket]
+        self.versions: dict = {}  # version id → record
+        self.issues_by_version = defaultdict(list)  # version id → [ticket]
+        self.sprints: dict = {}  # sprint id → record (+_tickets)
+        self.sprints_by_project = defaultdict(list)  # project → [sprint id]
+        self.epics: dict = {}  # epic key → epic ticket
+        self.children_by_epic = defaultdict(list)  # epic key → [ticket]
         self._index()
 
     def _index(self):
@@ -87,13 +93,13 @@ class Mirror:
                 rec = self.versions.get(vid)
                 if not rec:
                     rec = self.versions[vid] = {
-                        "id":          vid,
-                        "name":        v.get("name", vid),
-                        "project":     project,
-                        "archived":    bool(v.get("archived", False)),
-                        "released":    False,
+                        "id": vid,
+                        "name": v.get("name", vid),
+                        "project": project,
+                        "archived": bool(v.get("archived", False)),
+                        "released": False,
                         "releaseDate": "",
-                        "startDate":   "",
+                        "startDate": "",
                         "description": "",
                     }
                 rec["released"] = rec["released"] or bool(v.get("released", False))
@@ -113,15 +119,15 @@ class Mirror:
                 rec = self.sprints.get(sid)
                 if not rec:
                     rec = self.sprints[sid] = {
-                        "id":           sid,
-                        "name":         name,
-                        "state":        sp.get("state", ""),
-                        "startDate":    sp.get("startDate", ""),
-                        "endDate":      sp.get("endDate", ""),
+                        "id": sid,
+                        "name": name,
+                        "state": sp.get("state", ""),
+                        "startDate": sp.get("startDate", ""),
+                        "endDate": sp.get("endDate", ""),
                         "completeDate": sp.get("completeDate", ""),
-                        "goal":         sp.get("goal", ""),
-                        "_project":     project,
-                        "_tickets":     [],
+                        "goal": sp.get("goal", ""),
+                        "_project": project,
+                        "_tickets": [],
                     }
                 rec["_tickets"].append(t)
 

@@ -55,36 +55,51 @@ def transform(issues: list) -> list:
         source_key = issue.get("key", "")
         fields = issue.get("fields", {})
 
-        source_status  = (fields.get("status") or {}).get("name", "")
-        source_project = (fields.get("project") or {}).get("key", "") or _project_from_key(source_key)
+        source_status = (fields.get("status") or {}).get("name", "")
+        source_project = (fields.get("project") or {}).get(
+            "key", ""
+        ) or _project_from_key(source_key)
         source_updated = _ymd(fields.get("updated", ""))
 
         for link in fields.get("issuelinks") or []:
             link_type = (link.get("type") or {}).get("name", "")
 
             for direction in ("outward", "inward"):
-                linked_issue_key = "outwardIssue" if direction == "outward" else "inwardIssue"
+                linked_issue_key = (
+                    "outwardIssue" if direction == "outward" else "inwardIssue"
+                )
                 linked = link.get(linked_issue_key)
                 if not linked:
                     continue
 
-                target_key    = linked.get("key", "")
-                relation      = (link.get("type") or {}).get(direction, "")
-                target_status = (linked.get("fields", {}).get("status") or {}).get("name", "")
+                target_key = linked.get("key", "")
+                relation = (link.get("type") or {}).get(direction, "")
+                target_status = (linked.get("fields", {}).get("status") or {}).get(
+                    "name", ""
+                )
                 target_project = _project_from_key(target_key)
 
-                rows.append({
-                    "source_key":     source_key,
-                    "target_key":     target_key,
-                    "link_type":      link_type,
-                    "direction":      direction,
-                    "relation":       relation,
-                    "source_status":  source_status,
-                    "source_project": source_project,
-                    "source_updated": source_updated,
-                    "target_status":  target_status,
-                    "target_project": target_project,
-                })
+                rows.append(
+                    {
+                        "source_key": source_key,
+                        "target_key": target_key,
+                        "link_type": link_type,
+                        "direction": direction,
+                        "relation": relation,
+                        "source_status": source_status,
+                        "source_project": source_project,
+                        "source_updated": source_updated,
+                        "target_status": target_status,
+                        "target_project": target_project,
+                    }
+                )
 
-    rows.sort(key=lambda r: (r["source_project"], r["source_key"], r["direction"], r["target_key"]))
+    rows.sort(
+        key=lambda r: (
+            r["source_project"],
+            r["source_key"],
+            r["direction"],
+            r["target_key"],
+        )
+    )
     return rows

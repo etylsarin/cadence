@@ -21,28 +21,39 @@ def _post(api_key: str, body: dict) -> urllib.request.Request:
         _URL,
         data=json.dumps(body).encode(),
         headers={
-            "Content-Type":  "application/json",
+            "Content-Type": "application/json",
             "Authorization": f"Bearer {api_key}",
         },
     )
 
 
-def _body(model: str, messages: list, system: str, max_tokens: int, stream: bool) -> dict:
+def _body(
+    model: str, messages: list, system: str, max_tokens: int, stream: bool
+) -> dict:
     msgs = ([{"role": "system", "content": system}] if system else []) + messages
     body = {"model": model, "max_tokens": max_tokens, "messages": msgs}
-    if stream: body["stream"] = True
+    if stream:
+        body["stream"] = True
     return body
 
 
-def complete(config: dict, messages: list, system: str = None, max_tokens: int = 4096) -> str:
+def complete(
+    config: dict, messages: list, system: str = None, max_tokens: int = 4096
+) -> str:
     api_key, model = _credentials(config)
-    with urllib.request.urlopen(_post(api_key, _body(model, messages, system, max_tokens, stream=False)), timeout=_TIMEOUT) as resp:
+    with urllib.request.urlopen(
+        _post(api_key, _body(model, messages, system, max_tokens, stream=False)),
+        timeout=_TIMEOUT,
+    ) as resp:
         return json.loads(resp.read())["choices"][0]["message"]["content"]
 
 
 def stream(config: dict, messages: list, system: str = None, max_tokens: int = 2048):
     api_key, model = _credentials(config)
-    with urllib.request.urlopen(_post(api_key, _body(model, messages, system, max_tokens, stream=True)), timeout=_TIMEOUT) as resp:
+    with urllib.request.urlopen(
+        _post(api_key, _body(model, messages, system, max_tokens, stream=True)),
+        timeout=_TIMEOUT,
+    ) as resp:
         for raw_line in resp:
             line = raw_line.decode("utf-8").rstrip()
             if not line.startswith("data: "):
@@ -54,7 +65,7 @@ def stream(config: dict, messages: list, system: str = None, max_tokens: int = 2
                 event = json.loads(data_str)
             except json.JSONDecodeError:
                 continue
-            text = ((event.get("choices") or [{}])[0].get("delta", {}).get("content", ""))
+            text = (event.get("choices") or [{}])[0].get("delta", {}).get("content", "")
             if text:
                 yield text
 

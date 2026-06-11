@@ -35,7 +35,9 @@ def adf_to_text(node, indent=0) -> str:
         lines = []
         for i, item in enumerate(children, 1):
             prefix = f"{i}. " if t == "orderedList" else "• "
-            item_text = "".join(adf_to_text(c, indent + 1) for c in item.get("content", []))
+            item_text = "".join(
+                adf_to_text(c, indent + 1) for c in item.get("content", [])
+            )
             lines.append("  " * indent + prefix + item_text.strip())
         return "\n".join(lines) + "\n"
     if t in ("listItem", "blockquote", "doc"):

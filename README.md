@@ -32,8 +32,8 @@ The pipeline runs in stages:
 
 ```
 Jira API
-   └─ Bronze  (_gettickets.sh)   — raw JSON downloaded per project
-        └─ Repair (_repair.sh)   — corrects false-deletion artefacts
+   └─ Bronze  (_gettickets.py)   — raw JSON downloaded per project
+        └─ Repair (_repair.py)   — corrects false-deletion artefacts
              └─ Silver (_bronze2silver.py) — normalised, cleaned JSON
                   └─ Gold  (_silver2gold.py) — CSV metrics files + JSONL for AI
 ```

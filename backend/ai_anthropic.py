@@ -3,9 +3,9 @@
 import json
 import urllib.request
 
-_API_VERSION   = "2023-06-01"
-_URL           = "https://api.anthropic.com/v1/messages"
-_TIMEOUT       = 120  # seconds — generous for LLM latency, but never hang forever
+_API_VERSION = "2023-06-01"
+_URL = "https://api.anthropic.com/v1/messages"
+_TIMEOUT = 120  # seconds — generous for LLM latency, but never hang forever
 _DEFAULT_MODEL = "claude-opus-4-8"  # used when AI_MODEL is not set
 
 
@@ -22,29 +22,41 @@ def _post(api_key: str, body: dict) -> urllib.request.Request:
         _URL,
         data=json.dumps(body).encode(),
         headers={
-            "Content-Type":      "application/json",
-            "x-api-key":         api_key,
+            "Content-Type": "application/json",
+            "x-api-key": api_key,
             "anthropic-version": _API_VERSION,
         },
     )
 
 
-def _body(model: str, messages: list, system: str, max_tokens: int, stream: bool) -> dict:
+def _body(
+    model: str, messages: list, system: str, max_tokens: int, stream: bool
+) -> dict:
     body = {"model": model, "max_tokens": max_tokens, "messages": messages}
-    if system: body["system"] = system
-    if stream: body["stream"] = True
+    if system:
+        body["system"] = system
+    if stream:
+        body["stream"] = True
     return body
 
 
-def complete(config: dict, messages: list, system: str = None, max_tokens: int = 4096) -> str:
+def complete(
+    config: dict, messages: list, system: str = None, max_tokens: int = 4096
+) -> str:
     api_key, model = _credentials(config)
-    with urllib.request.urlopen(_post(api_key, _body(model, messages, system, max_tokens, stream=False)), timeout=_TIMEOUT) as resp:
+    with urllib.request.urlopen(
+        _post(api_key, _body(model, messages, system, max_tokens, stream=False)),
+        timeout=_TIMEOUT,
+    ) as resp:
         return json.loads(resp.read())["content"][0]["text"]
 
 
 def stream(config: dict, messages: list, system: str = None, max_tokens: int = 2048):
     api_key, model = _credentials(config)
-    with urllib.request.urlopen(_post(api_key, _body(model, messages, system, max_tokens, stream=True)), timeout=_TIMEOUT) as resp:
+    with urllib.request.urlopen(
+        _post(api_key, _body(model, messages, system, max_tokens, stream=True)),
+        timeout=_TIMEOUT,
+    ) as resp:
         for raw_line in resp:
             line = raw_line.decode("utf-8").rstrip()
             if not line.startswith("data: "):
