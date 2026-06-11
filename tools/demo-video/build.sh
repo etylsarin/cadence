@@ -48,19 +48,23 @@ SCENE_KEYS=(
   05-flow-metrics
   06-hygiene
   07-release-notes
-  08-planner
-  09-wrapup
+  08-sprint-summary
+  09-planner
+  10-prompt-builder
+  11-wrapup
 )
 
 SCENE_TEXTS=(
-  "Cadence is a Jira toolbox that turns your raw ticket data into delivery insights — and uses AI to help you act on them."
-  "Eight tools. One sync pipeline. No changes to your Jira workflow."
-  "Start by syncing your Jira project. The pipeline downloads every ticket, normalises the data, and computes delivery metrics — all locally, in seconds."
-  "Ask natural-language questions about your delivery. How many stories shipped last sprint? What's blocking us right now? Cadence answers using your actual Jira data, not a generic model."
-  "Flow Metrics shows cycle time, lead time, and stage breakdowns so you can see exactly where work is getting stuck — before it derails a release."
-  "The Hygiene Auditor scans every ticket for missing story points, empty epics, and stale statuses — then generates an AI plan to fix them all at once."
-  "Pick a Jira fix version and let AI draft your release notes. From raw tickets to polished markdown in one click."
-  "The Epic Planner projects your delivery timeline from team throughput and epic scope — so you can give honest, data-backed dates."
+  "Cadence turns your Jira data into delivery insights — and uses AI to help you act on them."
+  "Eight tools in one place. One sync pipeline. No changes to how your team works in Jira."
+  "Start by syncing your Jira project. The pipeline pre-computes delivery metrics so every tool runs instantly — even across thousands of tickets."
+  "Ask natural-language questions about your delivery. How many stories shipped last sprint? What's blocking us? Cadence answers using your actual Jira data, not guesswork."
+  "Flow Metrics shows cycle time, lead time, and a stage-by-stage breakdown of where work gets stuck. Click any stage to drill into the tickets slowing you down."
+  "The Hygiene Auditor scans every ticket for missing story points, empty epics, and stale statuses — then generates an AI plan to fix them."
+  "Pick a fix version and click Generate. In seconds you have polished release notes, grouped by type, ready to paste into Confluence or Slack."
+  "Sprint Summary gives a live view of velocity, burndown, and completed work — a stakeholder-ready sprint overview in seconds."
+  "The Epic Planner simulates your delivery timeline from team throughput and epic scope. Set a start date and get a data-backed forecast."
+  "Prompt Builder turns any ticket into a complete, context-rich Claude prompt — description, epic, linked issues, all in one click."
   "Cadence. Your Jira data, finally working for you."
 )
 
@@ -134,140 +138,123 @@ take_screenshots() {
 record_browser() {
   local scene="${1:-}"
   if [[ -n "$scene" ]]; then
-    echo "🌐 Recording browser scene: $scene"
-    node scripts/record-browser.mjs "$scene"
+    echo "🌐 Recording scene: $scene"
   else
-    echo "🌐 Recording all browser scenes..."
-    node scripts/record-browser.mjs
+    echo "🌐 Recording all scenes..."
   fi
-}
-
-# ── title cards ───────────────────────────────────────────────
-generate_title_cards() {
-  echo "🎨 Generating title cards..."
-
-  local dur_intro dur_wrapup
-  dur_intro=$(audio_duration audio/01-intro.mp3 2>/dev/null || echo "8")
-  dur_wrapup=$(audio_duration audio/09-wrapup.mp3 2>/dev/null || echo "9")
-
-  local intro_dur; intro_dur=$(echo "$dur_intro + 1" | bc)
-  local wrapup_dur; wrapup_dur=$(echo "$dur_wrapup + 2" | bc)
-
-  echo "  🎬 01-intro (${intro_dur}s)"
-  ffmpeg -y \
-    -f lavfi -i "color=c=${BG_COLOR}:s=${WIDTH}x${HEIGHT}:d=${intro_dur}:r=30" \
-    -vf "
-      drawtext=text='Ca':fontsize=72:fontcolor=white:fontfile=/System/Library/Fonts/Helvetica.ttc:
-        x=(w-tw)/2-20:y=(h-th)/2:font=Helvetica:fontweight=bold,
-      drawtext=text='dence':fontsize=72:fontcolor=0x94a3b8:fontfile=/System/Library/Fonts/Helvetica.ttc:
-        x=(w-tw)/2+50:y=(h-th)/2:font=Helvetica,
-      drawtext=text='Your Jira data, finally working for you':fontsize=24:fontcolor=0x64748b:
-        fontfile=/System/Library/Fonts/Helvetica.ttc:x=(w-tw)/2:y=(h-th)/2+80:font=Helvetica,
-      format=yuv420p
-    " \
-    -c:v libx264 -preset fast -crf 18 -t "$intro_dur" \
-    "clips/01-intro.mp4" 2>/dev/null
-  echo "     → clips/01-intro.mp4"
-
-  echo "  🎬 09-wrapup (${wrapup_dur}s)"
-  ffmpeg -y \
-    -f lavfi -i "color=c=${BG_COLOR}:s=${WIDTH}x${HEIGHT}:d=${wrapup_dur}:r=30" \
-    -vf "
-      drawtext=text='Ca':fontsize=72:fontcolor=white:fontfile=/System/Library/Fonts/Helvetica.ttc:
-        x=(w-tw)/2-20:y=(h-th)/2:font=Helvetica:fontweight=bold,
-      drawtext=text='dence':fontsize=72:fontcolor=0x94a3b8:fontfile=/System/Library/Fonts/Helvetica.ttc:
-        x=(w-tw)/2+50:y=(h-th)/2:font=Helvetica,
-      drawtext=text='cadence.dev':fontsize=20:fontcolor=0x3b82f6:
-        fontfile=/System/Library/Fonts/Helvetica.ttc:x=(w-tw)/2:y=(h-th)/2+80:font=Helvetica,
-      fade=t=out:st=$(echo "$wrapup_dur - 2" | bc):d=2,
-      format=yuv420p
-    " \
-    -c:v libx264 -preset fast -crf 18 -t "$wrapup_dur" \
-    "clips/09-wrapup.mp4" 2>/dev/null
-  echo "     → clips/09-wrapup.mp4"
-
-  echo "✅ Title cards done."
+  node scripts/record-browser.mjs $scene
 }
 
 # ── compose ───────────────────────────────────────────────────
 compose_video() {
   echo "🎬 Composing final video..."
 
-  # Dark pause clip between scenes (0.8s)
-  local pause_clip="clips/_pause.mp4"
-  ffmpeg -y \
-    -f lavfi -i "color=c=${BG_COLOR}:s=${WIDTH}x${HEIGHT}:d=0.8:r=30" \
-    -f lavfi -i "anullsrc=r=44100:cl=stereo" \
-    -c:v libx264 -preset fast -crf 18 \
-    -c:a aac -b:a 128k \
-    -t 0.8 -shortest \
-    "$pause_clip" 2>/dev/null
-
-  # Merge video + audio per scene
-  local scene_clips=()
-  for key in "${SCENE_KEYS[@]}"; do
-    local vid="clips/${key}.mp4"
-    local aud="audio/${key}.mp3"
-    local merged="clips/_scene-${key}.mp4"
-
-    if [[ ! -f "$vid" ]]; then
-      echo "  ⚠️  Missing clip: $vid — skipping"
-      continue
-    fi
-
-    if [[ -f "$aud" ]]; then
-      ffmpeg -y -i "$vid" -i "$aud" \
-        -c:v libx264 -c:a aac -shortest \
-        "$merged" 2>/dev/null
-    else
-      cp "$vid" "$merged"
-    fi
-    scene_clips+=("$merged")
-  done
-
-  # Build concat list with pauses between scenes
-  local concat_file="clips/_concat.txt"
-  : > "$concat_file"
-  local first=1
-  for clip in "${scene_clips[@]}"; do
-    if [[ $first -eq 0 ]]; then
-      echo "file '$(realpath "$pause_clip")'" >> "$concat_file"
-    fi
-    echo "file '$(realpath "$clip")'" >> "$concat_file"
-    first=0
-  done
-
-  # Concatenate
-  local no_music="output/_no-music.mp4"
-  ffmpeg -y -f concat -safe 0 -i "$concat_file" \
-    -c:v libx264 -c:a aac \
-    "$no_music" 2>/dev/null
-
-  # Mix in background music
-  local total_dur; total_dur=$(audio_duration "$no_music")
+  local music_dur; music_dur=$(audio_duration assets/bg-music.mp3)
   local final="output/cadence-demo.mp4"
-  local fade_start; fade_start=$(echo "$total_dur - 4" | bc)
+  local fade_start; fade_start=$(echo "$music_dur - 4" | bc)
 
-  ffmpeg -y \
-    -i "$no_music" \
-    -stream_loop -1 -i assets/bg-music.mp3 \
-    -filter_complex "
-      [1:a]afade=t=out:st=${fade_start}:d=4,volume=0.12[music];
-      [0:a][music]amix=inputs=2:duration=first:dropout_transition=0[aout]
-    " \
-    -map 0:v -map "[aout]" \
-    -c:v copy -c:a aac -b:a 128k \
-    -t "$total_dur" \
-    "$final" 2>/dev/null
+  # ── Decide video source: individual clips (preferred) or legacy raw file ──
+  local use_clips=1
+  for key in "${SCENE_KEYS[@]}"; do
+    [[ ! -f "clips/${key}.mp4" ]] && { use_clips=0; break; }
+  done
 
-  echo "✅ Output: $final  (${total_dur}s)"
+  local video_src
+  if [[ $use_clips -eq 1 ]]; then
+    echo "  🎞  Trimming and concatenating individual clips..."
+
+    local concat_video="clips/_concat.txt"
+    : > "$concat_video"
+    local n="${#SCENE_KEYS[@]}"
+
+    for i in "${!SCENE_KEYS[@]}"; do
+      local key="${SCENE_KEYS[$i]}"
+      local aud_dur; aud_dur=$(audio_duration "audio/${key}.mp3")
+      # Trim 1s from the start (skips about:blank / page-load blank) then keep
+      # audio_dur + 1.0s so the scene holds for 1s after narration finishes.
+      local trim_dur; trim_dur=$(echo "$aud_dur + 1.0" | bc)
+      local trimmed="clips/${key}-trimmed.mp4"
+      ffmpeg -y -ss 1.0 -i "clips/${key}.mp4" -t "$trim_dur" \
+        -c:v libx264 -preset fast -crf 20 "$trimmed" 2>/dev/null
+      echo "file '$(realpath "$trimmed")'" >> "$concat_video"
+      echo "  ✂  ${key}: skip 1s + keep ${trim_dur}s"
+    done
+
+    video_src="clips/_combined.mp4"
+    ffmpeg -y -f concat -safe 0 -i "$concat_video" \
+      -c:v libx264 -preset fast "$video_src" 2>/dev/null
+    echo "  ✅ Combined video: $(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$video_src")s"
+  else
+    video_src="clips/cadence-demo-raw.mp4"
+    if [[ ! -f "$video_src" ]]; then
+      echo "❌ No clips found — run: ./build.sh browser first"
+      exit 1
+    fi
+    echo "  ⚠️  Individual clips not found, using legacy raw file"
+  fi
+
+  # ── Build narration audio track (concat all scenes with 1.0s silence gaps) ──
+  # 1s pause matches the 1s clip trim excess so narration ends exactly with each clip.
+  local has_audio=0
+  for key in "${SCENE_KEYS[@]}"; do
+    [[ -f "audio/${key}.mp3" ]] && { has_audio=1; break; }
+  done
+
+  if [[ $has_audio -eq 1 ]]; then
+    echo "  🎙  Building narration track..."
+
+    # Pause must be MP3 to match scene files — concat demuxer silently drops
+    # files whose codec differs from the first file in the list.
+    ffmpeg -y -f lavfi -i "anullsrc=r=44100:cl=stereo" \
+      -t 1.0 -c:a libmp3lame -b:a 128k "audio/_pause.mp3" 2>/dev/null
+
+    local concat_audio="audio/_narration_concat.txt"
+    : > "$concat_audio"
+    local first=1
+    for key in "${SCENE_KEYS[@]}"; do
+      [[ $first -eq 0 ]] && echo "file '$(realpath "audio/_pause.mp3")'" >> "$concat_audio"
+      echo "file '$(realpath "audio/${key}.mp3")'" >> "$concat_audio"
+      first=0
+    done
+
+    ffmpeg -y -f concat -safe 0 -i "$concat_audio" \
+      -c:a aac -b:a 128k "audio/_narration.aac" 2>/dev/null
+
+    # No adelay needed: 1s trimmed from clip start so content is visible at t=0.
+    ffmpeg -y \
+      -i "$video_src" \
+      -i "audio/_narration.aac" \
+      -stream_loop -1 -i assets/bg-music.mp3 \
+      -filter_complex "
+        [2:a]afade=t=out:st=${fade_start}:d=4,volume=0.12[music];
+        [1:a][music]amix=inputs=2:duration=longest:dropout_transition=0[aout]
+      " \
+      -map 0:v -map "[aout]" \
+      -c:v libx264 -preset fast -c:a aac -b:a 128k \
+      -t "$music_dur" \
+      "$final" 2>/dev/null
+  else
+    echo "  ℹ️  No narration audio — mixing background music only"
+    ffmpeg -y \
+      -i "$video_src" \
+      -stream_loop -1 -i assets/bg-music.mp3 \
+      -filter_complex "
+        [1:a]afade=t=out:st=${fade_start}:d=4,volume=0.25[music];
+        [music]anull[aout]
+      " \
+      -map 0:v -map "[aout]" \
+      -c:v libx264 -preset fast -c:a aac -b:a 128k \
+      -t "$music_dur" \
+      "$final" 2>/dev/null
+  fi
+
+  echo "✅ Output: $final  (${music_dur}s)"
 }
 
 # ── all ───────────────────────────────────────────────────────
 run_all() {
   check_tools
   generate_tts
-  generate_title_cards
   record_browser
   compose_video
 }
@@ -280,11 +267,10 @@ case "$CMD" in
   check)       check_tools ;;
   tts)         generate_tts ;;
   screenshots) take_screenshots ;;
-  browser)     record_browser "${1:-}" ;;
-  cards)       generate_title_cards ;;
+  browser)     record_browser "$@" ;;
   compose)     compose_video ;;
   all)         run_all ;;
   *)
-    echo "Usage: ./build.sh <check|tts|screenshots|browser [scene]|cards|compose|all>"
+    echo "Usage: ./build.sh <check|tts|screenshots|browser [scene-key]|compose|all>"
     ;;
 esac
