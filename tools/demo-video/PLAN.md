@@ -15,7 +15,8 @@ Audio-first pipeline:
 - Resolution: 1280×720 (YouTube 720p)
 - Frame rate: 30 fps
 - Audio: AAC 128 kbps
-- Music: `assets/bg-music.mp3` at 12% volume, 4s fade-out
+- Duration: 103s (matches `assets/bg-music.mp3` exactly — no loop, no fade awkwardness)
+- Music: `assets/bg-music.mp3` at 12% volume, 4s fade-out at end
 
 ## Scene recording methods
 
