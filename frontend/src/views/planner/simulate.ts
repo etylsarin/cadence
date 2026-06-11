@@ -241,3 +241,94 @@ export function normalizePriority(name?: string): string {
   const n = (name || '').trim().toLowerCase()
   return PRIORITY_LEVELS.find((l) => l.toLowerCase() === n) || 'Medium'
 }
+
+interface OrderableEpic {
+  key: string
+  laneIndex: number
+  earliestStartWorkday: number
+  children: { key: string; blocks?: string[]; blocked_by?: string[] }[]
+}
+
+/**
+ * Auto-order epics based on ticket-level blocking relationships between them.
+ *
+ * Algorithm:
+ * 1. Build a directed graph: edge A→B if any child of A blocks any child of B.
+ * 2. Find connected components (undirected) — each component shares a lane.
+ * 3. Topological-sort within each component so blocking epics precede blocked ones.
+ * 4. Assign laneIndex per component; all earliestStartWorkdays reset to 0.
+ *
+ * Epics with no blocking relationship to any other selected epic each get their
+ * own lane and run in parallel. Epics in a chain share a lane and run
+ * sequentially in blocking order (the simulator handles the actual scheduling).
+ */
+export function autoOrderEpics<T extends OrderableEpic>(epics: T[]): T[] {
+  if (epics.length <= 1) return epics
+
+  const epicKeySet = new Set(epics.map((e) => e.key))
+  const outEdges = new Map<string, Set<string>>()
+  const inEdges  = new Map<string, Set<string>>()
+  for (const e of epics) { outEdges.set(e.key, new Set()); inEdges.set(e.key, new Set()) }
+
+  const ticketToEpic = new Map<string, string>()
+  for (const e of epics) for (const c of e.children) ticketToEpic.set(c.key, e.key)
+
+  for (const e of epics) {
+    for (const c of e.children) {
+      for (const blockedKey of c.blocks ?? []) {
+        const target = ticketToEpic.get(blockedKey)
+        if (target && target !== e.key && epicKeySet.has(target)) {
+          outEdges.get(e.key)!.add(target); inEdges.get(target)!.add(e.key)
+        }
+      }
+    }
+  }
+
+  // Connected components (undirected BFS — each component → one lane)
+  const visited = new Set<string>()
+  const components: string[][] = []
+  for (const e of epics) {
+    if (visited.has(e.key)) continue
+    const comp: string[] = []; const queue = [e.key]
+    while (queue.length) {
+      const k = queue.pop()!
+      if (visited.has(k)) continue
+      visited.add(k); comp.push(k)
+      for (const n of outEdges.get(k) ?? []) if (!visited.has(n)) queue.push(n)
+      for (const n of inEdges.get(k) ?? []) if (!visited.has(n)) queue.push(n)
+    }
+    components.push(comp)
+  }
+
+  // Kahn's topological sort within each component
+  function topoSort(keys: string[]): string[] {
+    const deg = new Map<string, number>()
+    for (const k of keys) deg.set(k, 0)
+    for (const k of keys) for (const n of outEdges.get(k) ?? []) if (deg.has(n)) deg.set(n, (deg.get(n) ?? 0) + 1)
+    const queue = keys.filter((k) => !deg.get(k)).sort()
+    const result: string[] = []
+    while (queue.length) {
+      const k = queue.shift()!; result.push(k)
+      const sorted = [...(outEdges.get(k) ?? [])].sort()
+      for (const n of sorted) {
+        if (!deg.has(n)) continue
+        const d = (deg.get(n) ?? 1) - 1; deg.set(n, d)
+        if (!d) queue.push(n)
+      }
+    }
+    for (const k of keys) if (!result.includes(k)) result.push(k)
+    return result
+  }
+
+  const keyToLane = new Map<string, number>()
+  const orderedKeys: string[] = []
+  for (let lane = 0; lane < components.length; lane++) {
+    for (const k of topoSort(components[lane])) { keyToLane.set(k, lane); orderedKeys.push(k) }
+  }
+
+  const epicByKey = new Map(epics.map((e) => [e.key, e]))
+  return orderedKeys
+    .map((k) => epicByKey.get(k)!)
+    .filter(Boolean)
+    .map((e) => ({ ...e, laneIndex: keyToLane.get(e.key) ?? 0, earliestStartWorkday: 0 }))
+}

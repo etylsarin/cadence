@@ -59,7 +59,7 @@ def _load_tickets() -> list:
 
 
 def _filter_tickets(tickets: list, project: str, months: int) -> list:
-    if project and project != "ORG":
+    if project and project != "ALL":
         tickets = [t for t in tickets if t.get("project") == project]
 
     if months:
@@ -127,7 +127,7 @@ def _format_ticket(t: dict) -> str:
 
 def _build_system_prompt(tickets: list, project: str, months: int) -> str:
     project_desc = (
-        project if project != "ORG"
+        project if project != "ALL"
         else f"all squads ({', '.join(PROJECTS)})"
     )
     time_desc = f"last {months} months" if months else "all time"
@@ -166,7 +166,7 @@ def _stream_ai(config: dict, system_prompt: str, question: str):
 
 class ChatRequest(BaseModel):
     question: str
-    project:  str = "ORG"
+    project:  str = "ALL"
     months:   int = 6   # 0 = all time
 
 
@@ -208,7 +208,7 @@ def chat(body: ChatRequest):
 
 def _agent_system_prompt(project: str, months: int) -> str:
     project_scope = (
-        project if project != "ORG"
+        project if project != "ALL"
         else f"all squads ({', '.join(PROJECTS)})"
     )
     time_scope = f"last {months} months" if months else "all time"

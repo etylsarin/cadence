@@ -40,7 +40,7 @@ export default function PlannerSidebar({ squad, squads, asOf = null, monthsUsed 
         <div className="px-1 mb-2 text-[10px] leading-snug text-gray-500 dark:text-gray-400">
           Pick a timeframe to measure the squad's <span className="font-medium text-gray-700 dark:text-gray-300">delivery pace</span> (average completed items/month) from. Only completed months are counted.
         </div>
-        <TimeframePicker ref={pickerRef} onChange={onPeriodChange} />
+        <TimeframePicker ref={pickerRef} onChange={onPeriodChange} initialMulti />
         <div className="mt-5 px-1 text-[10px] text-gray-400 leading-snug">
           {monthsUsed > 0
             ? <>{monthsUsed} {monthsUsed === 1 ? 'month' : 'months'} in scope · latest {asOf}</>

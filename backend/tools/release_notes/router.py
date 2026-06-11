@@ -30,13 +30,13 @@ log = logging.getLogger(__name__)
 def get_versions(project: str, include_unreleased: bool = True, include_released: bool = False, include_archived: bool = False) -> list:
     versions = []
     for v in get_mirror().versions.values():
-        if v["project"] != project:
+        if project != "ALL" and v["project"] != project:
             continue
         if v["archived"] and not include_archived:
             continue
         if (v["released"] and include_released) or (not v["released"] and include_unreleased):
             versions.append({
-                "id": v["id"], "name": v["name"], "project": project,
+                "id": v["id"], "name": v["name"], "project": v["project"],
                 "description": v["description"],
                 "releaseDate": v["releaseDate"],
                 "startDate": v["startDate"],
@@ -97,7 +97,8 @@ def api_versions(
     limit:      int  = Query(10),
     offset:     int  = Query(0),
 ):
-    validate_project(project)
+    if project != "ALL":
+        validate_project(project)
     all_items = get_versions(project, unreleased, released)
     return {
         "items":   all_items[offset:offset + limit],

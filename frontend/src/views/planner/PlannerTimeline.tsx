@@ -167,6 +167,15 @@ interface StartHandleDrag {
   frozenOrigin: Date
   frozenPx: number
 }
+interface ResizeDrag {
+  epicId: string
+  originalItems: number
+  originalWidthPx: number
+  pointerX0: number
+  frozenPxPerWd: number
+  newItems: number
+  newWidthPx: number
+}
 interface Lane {
   key: string
   laneIndex: number
@@ -186,14 +195,19 @@ interface Props {
   onDragPreview: (change: ReorderChange | null) => void
   onReorder: (change: ReorderChange) => void
   onRemove: (epicKey: string) => void
+  onResizeEpic: (epicKey: string, newItems: number) => void
 }
 
 export default function PlannerTimeline({
   squad, team, startDate, baseline, previewBaseline,
   onStartDateChange,
-  onDragPreview, onReorder, onRemove,
+  onDragPreview, onReorder, onRemove, onResizeEpic,
 }: Props) {
   const [scale, setScale] = useState<Scale>('auto')
+  // After a resize commit, hold the drag-time px/wd so the zoom doesn't jump
+  // when auto-scale re-fits to the (now shorter) plan.  Cleared when the user
+  // explicitly picks a scale or drags the start handle.
+  const [lockedPxPerWd, setLockedPxPerWd] = useState<number | null>(null)
   const [containerWidth, setContainerWidth] = useState(0)
   const [scrollX, setScrollX] = useState(0)
   const [spanLabelW, setSpanLabelW] = useState(64)
@@ -211,6 +225,10 @@ export default function PlannerTimeline({
   const startHandleRef = useRef<StartHandleDrag | null>(null)
   const [startHandleDrag, _setStartHandleDrag] = useState<StartHandleDrag | null>(null)
   const setStartHandle = useCallback((s: StartHandleDrag | null) => { startHandleRef.current = s; _setStartHandleDrag(s ? { ...s } : null) }, [])
+
+  const resizeRef = useRef<ResizeDrag | null>(null)
+  const [resizeDrag, _setResizeDrag] = useState<ResizeDrag | null>(null)
+  const setResize = useCallback((r: ResizeDrag | null) => { resizeRef.current = r; _setResizeDrag(r ? { ...r } : null) }, [])
 
   // ── Container resize tracking ───────────────────────────────────────────────
   useEffect(() => {
@@ -250,6 +268,7 @@ export default function PlannerTimeline({
 
   const pxPerWorkday = (() => {
     if (startHandleDrag) return startHandleDrag.frozenPx
+    if (lockedPxPerWd !== null) return lockedPxPerWd
     const avail = Math.max(200, containerWidth - LABEL_COL_PX)
     if (scale === 'auto') {
       if (autoFitWorkdays <= 0) return 8
@@ -303,12 +322,14 @@ export default function PlannerTimeline({
 
   // ── Rows / lanes ────────────────────────────────────────────────────────────
   const baselineRows = useMemo(() => {
+    if (squad === 'ALL') return (baseline?.teamPlans || []).flatMap((t) => t.rows)
     const tp = (baseline?.teamPlans || []).find((t) => t.teamId === squad)
     return tp?.rows || []
   }, [baseline, squad])
 
   const displayRows = useMemo(() => {
     const src = dragState && previewBaseline ? previewBaseline : baseline
+    if (squad === 'ALL') return (src?.teamPlans || []).flatMap((t) => t.rows)
     const tp = (src?.teamPlans || []).find((t) => t.teamId === squad)
     return tp?.rows || []
   }, [dragState, previewBaseline, baseline, squad])
@@ -340,7 +361,7 @@ export default function PlannerTimeline({
         key: `lane-${idx}`,
         laneIndex: idx,
         label: sorted.length ? `Lane ${idx + 1}` : '',
-        color: sorted.length ? PROJ_COLORS[squad] : null,
+        color: sorted.length ? (PROJ_COLORS[squad] ?? sorted[0]?.color ?? null) : null,
         rows: sorted,
         isGhost: sorted.length === 0,
       }
@@ -463,8 +484,8 @@ export default function PlannerTimeline({
 
   // ── Start-handle drag ───────────────────────────────────────────────────────
   // Stable snapshot of values the window-level pointer handlers need.
-  const latest = useRef({ pxPerWorkday, baselineRows, chartOrigin, baselineStartD, barOffset, floorFromOriginWorkday })
-  latest.current = { pxPerWorkday, baselineRows, chartOrigin, baselineStartD, barOffset, floorFromOriginWorkday }
+  const latest = useRef({ pxPerWorkday, baselineRows, chartOrigin, baselineStartD, barOffset, floorFromOriginWorkday, scale, containerWidth })
+  latest.current = { pxPerWorkday, baselineRows, chartOrigin, baselineStartD, barOffset, floorFromOriginWorkday, scale, containerWidth }
 
   const onStartHandleMove = useCallback((ev: PointerEvent) => {
     const s = startHandleRef.current
@@ -476,6 +497,7 @@ export default function PlannerTimeline({
   }, [onStartDateChange])
 
   const endStartHandle = useCallback(() => {
+    setLockedPxPerWd(null)
     setStartHandle(null)
     window.removeEventListener('pointermove', onStartHandleMove)
     window.removeEventListener('pointerup', endStartHandle)
@@ -592,12 +614,60 @@ export default function PlannerTimeline({
     window.addEventListener('pointerup', endDragRef.current)
   }
 
+  // ── Right-edge resize ────────────────────────────────────────────────────────
+  const onResizeMove = useCallback((ev: PointerEvent) => {
+    const s = resizeRef.current
+    if (!s) return
+    const dx = ev.clientX - s.pointerX0
+    const newWidthPx = Math.max(s.frozenPxPerWd, s.originalWidthPx + dx)
+    const newDurationWd = Math.max(1, Math.round(newWidthPx / s.frozenPxPerWd))
+    const newItems = Math.max(1, Math.round(newDurationWd * dailyThroughput(team)))
+    setResize({ ...s, newWidthPx, newItems })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [setResize, team])
+
+  const endResizeRef = useRef<() => void>(() => { /* filled below */ })
+  const endResize = useCallback(() => {
+    const s = resizeRef.current
+    if (s && s.newItems !== s.originalItems) {
+      onResizeEpic(s.epicId, s.newItems)
+      // In auto mode the zoom re-fits after the simulation re-runs (shorter plan
+      // → higher zoom → bar appears wider).  Lock the drag-time px/wd so the
+      // zoom stays stable until the user explicitly picks a different scale.
+      setLockedPxPerWd(s.frozenPxPerWd)
+    }
+    setResize(null)
+    window.removeEventListener('pointermove', onResizeMove)
+    window.removeEventListener('pointerup', endResizeRef.current)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [onResizeMove, onResizeEpic, setResize])
+  useEffect(() => { endResizeRef.current = endResize })
+
+  function startResize(ev: ReactPointerEvent, row: PlanRow) {
+    if (ev.button !== 0) return
+    ev.preventDefault(); ev.stopPropagation()
+    const originalWidthPx = barWidth(row)
+    setResize({
+      epicId: row.epicId,
+      originalItems: row.items,
+      originalWidthPx,
+      pointerX0: ev.clientX,
+      frozenPxPerWd: Math.max(0.5, pxPerWorkday),
+      newItems: row.items,
+      newWidthPx: originalWidthPx,
+    })
+    window.addEventListener('pointermove', onResizeMove)
+    window.addEventListener('pointerup', endResizeRef.current)
+  }
+
   // Unmount cleanup.
   useEffect(() => () => {
     window.removeEventListener('pointermove', onDragMove)
     window.removeEventListener('pointerup', endDragRef.current)
     window.removeEventListener('pointermove', onStartHandleMove)
     window.removeEventListener('pointerup', endStartHandle)
+    window.removeEventListener('pointermove', onResizeMove)
+    window.removeEventListener('pointerup', endResizeRef.current)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -622,17 +692,19 @@ export default function PlannerTimeline({
   }
 
   function barStyle(row: PlanRow): CSSProperties {
+    const isResizing = resizeDrag?.epicId === row.epicId
+    const w = isResizing ? resizeDrag!.newWidthPx : barWidth(row)
     const base: CSSProperties = {
       top: `${(LANE_HEIGHT - BAR_HEIGHT) / 2}px`,
       height: `${BAR_HEIGHT}px`,
       left: `${barOffset(row)}px`,
-      width: `${barWidth(row)}px`,
+      width: `${w}px`,
       display: 'flex',
       flexDirection: 'column',
       justifyContent: 'center',
       alignItems: 'flex-start',
       textAlign: 'left',
-      padding: '10px 10px 4px 10px',
+      padding: '10px 18px 4px 10px',
       lineHeight: '1.15',
     }
     if (isFrame(row)) {
@@ -644,9 +716,10 @@ export default function PlannerTimeline({
   }
 
   function barClass(row: PlanRow): string {
+    const isResizing = resizeDrag?.epicId === row.epicId
     return [
-      dragState ? 'pointer-events-none' : 'cursor-grab',
-      dragState ? 'transition-[left,width] duration-150 ease-out' : 'transition-[left,width] duration-200 ease-out',
+      dragState || resizeDrag ? 'pointer-events-none' : 'cursor-grab',
+      isResizing ? '' : (dragState ? 'transition-[left,width] duration-150 ease-out' : 'transition-[left,width] duration-200 ease-out'),
       isFrame(row) ? 'z-[3]' : 'z-[1] text-white',
     ].join(' ')
   }
@@ -675,6 +748,8 @@ export default function PlannerTimeline({
             <li><span className="font-medium">Pace</span> is the squad's average completed items/month, measured from synced data over the selected timeframe. Because it's measured end-to-end on real deliveries, waits, rework and release queues are already in the rate — an epic's default length is simply its item count at that pace.</li>
             <li><span className="font-medium">Start</span> sets when the plan begins — click the date in the Start box (a calendar picker; past dates are disabled) <em>or</em> drag the green <span className="font-medium">Start</span> handle on the chart to slide the whole plan.</li>
             <li><span className="font-medium">Drag bars horizontally</span> to set when each epic starts. Bars that overlap in time share the squad's daily capacity equally and split into their own swimlanes automatically. <span className="font-medium">Drag a bar off the top or left edge</span> of the chart to remove it from the plan.</li>
+            <li><span className="font-medium">Resize bars</span> by hovering the right edge of a bar until the resize cursor appears, then dragging. Dragging right increases the epic's item count (longer bar); dragging left decreases it. Downstream bars in the same lane shift automatically to stay back-to-back.</li>
+            <li><span className="font-medium">Auto-ordering</span>: when epics are added from the Scope table, the planner places them in series (same lane) if ticket blocking links require it, and in parallel (separate lanes) otherwise. Manual drag always overrides auto-placement.</li>
             <li><span className="font-medium">Lanes</span> are queues — bars inside the same lane stay back-to-back; bars in different lanes share the squad's daily capacity in parallel.</li>
             <li><span className="font-medium">Scale</span> picks the zoom — Auto fits the plan exactly; Month / Quarter / Year are fixed zoom levels. Every scale has matching scroll room on both sides, so you can scroll back past Start or forward past End.</li>
           </ul>
@@ -751,7 +826,7 @@ export default function PlannerTimeline({
                   <button
                     key={s}
                     className={`px-2.5 py-0.5 rounded text-xs font-medium capitalize transition-colors ${scale === s ? 'bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 shadow-sm' : 'text-gray-500 hover:text-gray-800 dark:hover:text-gray-200'}`}
-                    onClick={() => setScale(s)}
+                    onClick={() => { setLockedPxPerWd(null); setScale(s) }}
                   >{s}</button>
                 ))}
               </div>
@@ -874,37 +949,52 @@ export default function PlannerTimeline({
                       )}
 
                       {/* Bars */}
-                      {lane.rows.map((row) => (
-                        <AppTooltip
-                          key={row.epicId}
-                          placement="top"
-                          followCursor
-                          disabled={!!dragState}
-                          className={`absolute rounded text-[10px] font-semibold select-none overflow-hidden ${barClass(row)}`}
-                          style={barStyle(row)}
-                          data-epic-id={row.epicId}
-                          onPointerDown={(e) => startDrag(e, row, lane.key)}
-                          content={
-                            <div className="min-w-[200px]">
-                              <div className="text-sm font-semibold text-gray-900 dark:text-gray-100 tabular-nums">{row.durationWorkdays} workdays</div>
-                              <div className="text-[11px] text-gray-500 tabular-nums">{shortDate(row.plannedStart)} → {shortDate(row.plannedEnd)}</div>
-                              <div className="mt-1.5 pt-1.5 border-t border-gray-100 dark:border-slate-700">
-                                <div className="font-mono text-[11px] text-gray-500">{row.epicId}</div>
-                                <div className="text-[12px] font-medium text-gray-800 dark:text-gray-200 leading-tight">{row.epicName}</div>
+                      {lane.rows.map((row) => {
+                        const isResizingThis = resizeDrag?.epicId === row.epicId
+                        const displayItems = isResizingThis ? resizeDrag!.newItems : row.items
+                        const displayWd    = isResizingThis ? Math.max(1, Math.round(resizeDrag!.newWidthPx / Math.max(0.5, pxPerWorkday))) : row.durationWorkdays
+                        return (
+                          <AppTooltip
+                            key={row.epicId}
+                            placement="top"
+                            followCursor
+                            disabled={!!dragState || !!resizeDrag}
+                            className={`absolute rounded text-[10px] font-semibold select-none overflow-hidden ${barClass(row)}`}
+                            style={barStyle(row)}
+                            data-epic-id={row.epicId}
+                            onPointerDown={(e) => { if (!resizeDrag) startDrag(e, row, lane.key) }}
+                            content={
+                              <div className="min-w-[200px]">
+                                <div className="text-sm font-semibold text-gray-900 dark:text-gray-100 tabular-nums">{row.durationWorkdays} workdays</div>
+                                <div className="text-[11px] text-gray-500 tabular-nums">{shortDate(row.plannedStart)} → {shortDate(row.plannedEnd)}</div>
+                                <div className="mt-1.5 pt-1.5 border-t border-gray-100 dark:border-slate-700">
+                                  <div className="font-mono text-[11px] text-gray-500">{row.epicId}</div>
+                                  <div className="text-[12px] font-medium text-gray-800 dark:text-gray-200 leading-tight">{row.epicName}</div>
+                                </div>
+                                <div className="mt-1.5 flex items-center justify-between gap-2 text-[11px] text-gray-500">
+                                  <span className="tabular-nums">{row.items} items</span>
+                                  {row.priorityLevel && <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${barPriorityCls(row.priorityLevel)}`}>{row.priorityLevel}</span>}
+                                </div>
                               </div>
-                              <div className="mt-1.5 flex items-center justify-between gap-2 text-[11px] text-gray-500">
-                                <span className="tabular-nums">{row.items} items</span>
-                                {row.priorityLevel && <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${barPriorityCls(row.priorityLevel)}`}>{row.priorityLevel}</span>}
-                              </div>
+                            }
+                          >
+                            <div className="truncate font-semibold">{row.epicName}</div>
+                            <div className="truncate text-[9px] font-medium opacity-90 tabular-nums">
+                              {displayItems} items · {displayWd} wd{row.priorityLevel ? <> · {row.priorityLevel}</> : null}
                             </div>
-                          }
-                        >
-                          <div className="truncate font-semibold">{row.epicName}</div>
-                          <div className="truncate text-[9px] font-medium opacity-90 tabular-nums">
-                            {row.items} items · {row.durationWorkdays} wd{row.priorityLevel ? <> · {row.priorityLevel}</> : null}
-                          </div>
-                        </AppTooltip>
-                      ))}
+                            {/* Right-edge resize handle — always present, pointer-events restored */}
+                            {!dragState && (
+                              <div
+                                className="absolute right-0 top-0 bottom-0 w-2.5 cursor-ew-resize z-[4] flex items-center justify-end pr-0.5 opacity-0 hover:opacity-100 pointer-events-auto"
+                                title="Drag to resize"
+                                onPointerDown={(e) => startResize(e, row)}
+                              >
+                                <div className="w-0.5 h-4 rounded-full bg-white/60" />
+                              </div>
+                            )}
+                          </AppTooltip>
+                        )
+                      })}
                     </div>
                   </div>
                 ))}

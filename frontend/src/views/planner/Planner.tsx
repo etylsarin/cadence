@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '@/lib/api'
 import PlannerSidebar from './PlannerSidebar'
-import PlannerScope, { type PlannerScopeHandle } from './PlannerScope'
+import PlannerScope from './PlannerScope'
 import PlannerTimeline from './PlannerTimeline'
-import { simulate, EPIC_COLORS, countWorkdays, normalizePriority, ymd, type SimResult, type EpicInput } from './simulate'
+import { simulate, autoOrderEpics, EPIC_COLORS, countWorkdays, normalizePriority, ymd, type SimResult, type EpicInput } from './simulate'
 import { useProject, PROJECTS as ALL_PROJECTS } from '@/hooks/useProject'
 import type { PeriodSelection } from '@/lib/jql'
 import type { TeamConfig, RecentEpic, SelectedEpic, EpicOverride, ReorderChange, EpicEditPayload, EpicChild } from './types'
@@ -18,7 +18,7 @@ interface ChildrenResponse {
 }
 
 export default function Planner() {
-  const { project: squad, PROJECTS, set: setSquad } = useProject()
+  const { project: squad, PROJECTS: squadList, set: setSquad } = useProject()
 
   const [startDate, setStartDate] = useState(() => new Date().toISOString().slice(0, 10))
   // Period drives throughput + release-tail; sidebar's TimeframePicker emits the
@@ -41,36 +41,46 @@ export default function Planner() {
 
   const [statusInScope, setStatusInScope] = useState<Record<string, boolean>>({})
 
-  // Custom epics — placeholders for work not yet in Jira, keyed by squad.
-  const [customEpics, setCustomEpics] = useState<Record<string, RecentEpic[]>>({})
-  const customEpicSeq = useRef(0)
-  const [nextCustomKey, setNextCustomKey] = useState('CUST-1')
 
   // Persistent per-epic edit overrides (Jira rows) — survives selection toggles.
   const [epicOverrides, setEpicOverrides] = useState<Record<string, EpicOverride>>({})
 
   const [globalError, setGlobalError] = useState<string | null>(null)
-
-  const scopeRef = useRef<PlannerScopeHandle>(null)
+  const [depWarning, setDepWarning] = useState<{ ticket: string; epic: string }[]>([])
+  const [autoAddedInfo, setAutoAddedInfo] = useState<string[]>([])
 
   // ── Helpers ─────────────────────────────────────────────────────────────────
 
   const countInScope = useCallback((epic: SelectedEpic): number => {
     if (epic.overrideItems != null) return Math.max(0, Number(epic.overrideItems))
-    if (epic.custom) return Math.max(0, Number(epic.customItems || 0))
     if (!epic.children) return 0
     return epic.children.filter((c) => statusInScope[c.status]).length
   }, [statusInScope])
 
-  const epicsForSquad = useMemo(() => selectedEpics.filter((e) => e.project === squad), [selectedEpics, squad])
+  const isAllProjects = squad === 'ALL'
 
-  const buildTeam = useCallback((): TeamConfig => teamConfig[squad], [teamConfig, squad])
+  const timelineTeam = useMemo<TeamConfig>(() => {
+    if (!isAllProjects) return teamConfig[squad] ?? { id: squad, name: squad, throughputPerMonth: 0 }
+    const total = ALL_PROJECTS.reduce((sum, p) => sum + (teamConfig[p]?.throughputPerMonth ?? 0), 0)
+    return { id: 'ALL', name: 'All Projects', throughputPerMonth: total }
+  }, [isAllProjects, teamConfig, squad])
+
+  const epicsForSquad = useMemo(
+    () => isAllProjects ? selectedEpics : selectedEpics.filter((e) => e.project === squad),
+    [selectedEpics, squad, isAllProjects],
+  )
+
+  const buildTeams = useCallback((): TeamConfig[] => {
+    if (isAllProjects) return ALL_PROJECTS.map((p) => teamConfig[p]).filter(Boolean)
+    const t = teamConfig[squad]
+    return t ? [t] : []
+  }, [teamConfig, squad, isAllProjects])
 
   const buildEpics = useCallback((list: SelectedEpic[]): EpicInput[] => {
     return list.map((e, idx) => ({
       id: e.key,
       name: e.overrideTitle || e.summary || e.key,
-      teamId: squad,
+      teamId: e.project,
       items: countInScope(e),
       color: e.color,
       priority: idx + 1,
@@ -78,14 +88,15 @@ export default function Planner() {
       earliestStartWorkday: Math.max(0, Number(e.earliestStartWorkday || 0)),
       laneIndex: Math.max(0, Number(e.laneIndex || 0)),
     }))
-  }, [squad, countInScope])
+  }, [countInScope])
 
   const baselineStart = useMemo(() => new Date(startDate + 'T00:00:00'), [startDate])
 
   const baseline = useMemo<SimResult | null>(() => {
-    if (!epicsForSquad.length) return null
-    return simulate({ teams: [buildTeam()], epics: buildEpics(epicsForSquad), start: baselineStart, focusMode: 'parallel' })
-  }, [epicsForSquad, buildTeam, buildEpics, baselineStart])
+    const teams = buildTeams()
+    if (!epicsForSquad.length || !teams.length) return null
+    return simulate({ teams, epics: buildEpics(epicsForSquad), start: baselineStart, focusMode: 'parallel' })
+  }, [epicsForSquad, buildTeams, buildEpics, baselineStart])
 
   // ── Data loading ────────────────────────────────────────────────────────────
 
@@ -119,28 +130,42 @@ export default function Planner() {
       .catch((e) => setGlobalError(`Throughput: ${(e as Error).message}`))
   }, [])
 
-  // Auto-load epics for the selected squad.
+  // Auto-load epics for the selected squad (or all projects when squad='ALL').
   useEffect(() => {
-    if (!squad || recentEpicsByProject[squad]) return
+    if (!squad) return
+    // Determine which projects still need loading.
+    const toLoad = isAllProjects
+      ? ALL_PROJECTS.filter((p) => !recentEpicsByProject[p])
+      : recentEpicsByProject[squad] ? [] : [squad]
+    if (!toLoad.length) return
+
     let cancelled = false
-    setLoadingEpicsFor(squad)
-    api<EpicsResponse>(`/planner/api/epics?project=${encodeURIComponent(squad)}&limit=50`)
-      .then((res) => {
+    setLoadingEpicsFor(isAllProjects ? 'ALL' : squad)
+
+    Promise.all(toLoad.map((p) =>
+      api<EpicsResponse>(`/planner/api/epics?project=${encodeURIComponent(p)}&limit=50`)
+        .then((res) => ({ project: p, epics: res.epics || [] })),
+    ))
+      .then((results) => {
         if (cancelled) return
-        setRecentEpicsByProject((prev) => ({ ...prev, [squad]: res.epics || [] }))
-        // Seed statusInScope from the per-epic breakdowns so the To-do count +
-        // Status filter populate before any epic is selected.
+        setRecentEpicsByProject((prev) => {
+          const next = { ...prev }
+          for (const { project: p, epics } of results) next[p] = epics
+          return next
+        })
         setStatusInScope((prev) => {
           const next = { ...prev }
-          for (const ep of res.epics || []) {
-            for (const status of Object.keys(ep.child_status_counts || {})) {
-              if (!(status in next)) next[status] = !DEFAULT_EXCLUDED_STATUSES.has(status)
+          for (const { epics } of results) {
+            for (const ep of epics) {
+              for (const status of Object.keys(ep.child_status_counts || {})) {
+                if (!(status in next)) next[status] = !DEFAULT_EXCLUDED_STATUSES.has(status)
+              }
             }
           }
           return next
         })
       })
-      .catch((e) => { if (!cancelled) setGlobalError(`Epics ${squad}: ${(e as Error).message}`) })
+      .catch((e) => { if (!cancelled) setGlobalError(`Epics: ${(e as Error).message}`) })
       .finally(() => { if (!cancelled) setLoadingEpicsFor(null) })
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -172,6 +197,12 @@ export default function Planner() {
     return countWorkdays(baselineStart, latestEnd)
   }, [baseline, baselineStart])
 
+  // Latest-value refs so refreshChildren (stable callback) can read current data.
+  const recentEpicsRef = useRef(recentEpicsByProject)
+  recentEpicsRef.current = recentEpicsByProject
+  const epicOverridesRef = useRef(epicOverrides)
+  epicOverridesRef.current = epicOverrides
+
   const refreshChildren = useCallback(async (keys: string[]) => {
     if (!keys.length) return
     setLoadingChildren(true)
@@ -179,7 +210,95 @@ export default function Planner() {
       const res = await api<ChildrenResponse>('/planner/api/epic-children', { method: 'POST', body: JSON.stringify({ epic_keys: keys }) })
       const byKey: Record<string, { children: EpicChild[]; status_breakdown: Record<string, number> }> = {}
       for (const e of res.epics || []) byKey[e.key] = e
-      setSelectedEpics((prev) => prev.map((e) => (byKey[e.key] ? { ...e, children: byKey[e.key].children, status_breakdown: byKey[e.key].status_breakdown } : e)))
+
+      let latestEpics: SelectedEpic[] = []
+      setSelectedEpics((prev) => {
+        const updated = prev.map((e) => (byKey[e.key] ? { ...e, children: byKey[e.key].children, status_breakdown: byKey[e.key].status_breakdown } : e))
+        latestEpics = autoOrderEpics(updated)
+        return latestEpics
+      })
+
+      // Detect external blocking dependencies: ticket keys referenced in blocks/blocked_by
+      // that don't belong to any currently selected epic.
+      const knownTickets = new Set(latestEpics.flatMap((e) => e.children.map((c) => c.key)))
+      const external = new Set<string>()
+      for (const epic of latestEpics) {
+        for (const child of epic.children) {
+          for (const ref of [...(child.blocks ?? []), ...(child.blocked_by ?? [])]) {
+            if (!knownTickets.has(ref)) external.add(ref)
+          }
+        }
+      }
+      if (external.size) {
+        try {
+          const ticketEpics = await api<Record<string, string>>(
+            `/planner/api/ticket-epics?${[...external].map((k) => `keys=${encodeURIComponent(k)}`).join('&')}`,
+          )
+          const selectedEpicKeys = new Set(latestEpics.map((e) => e.key))
+          const allMissing = Object.entries(ticketEpics)
+            .filter(([, epicKey]) => !selectedEpicKeys.has(epicKey))
+            .map(([ticket, epic]) => ({ ticket, epic }))
+          const uniqueMissing = [...new Map(allMissing.map((w) => [w.epic, w])).values()]
+
+          const getProj = (k: string) => k.split('-')[0]
+          const selectedProjects = new Set(latestEpics.map((e) => e.project))
+          const toAutoAdd: SelectedEpic[] = []
+          const cantAdd: { ticket: string; epic: string }[] = []
+
+          for (const { epic: epicKey } of uniqueMissing) {
+            const p = getProj(epicKey)
+            const meta = recentEpicsRef.current[p]?.find((e) => e.key === epicKey)
+            if (selectedProjects.has(p) && meta) {
+              const ovr = epicOverridesRef.current[epicKey] || {}
+              toAutoAdd.push({
+                key: epicKey,
+                summary: meta.summary,
+                project: p,
+                // eslint-disable-next-line react-hooks/exhaustive-deps
+                color: nextColor(p, [...latestEpics, ...toAutoAdd]),
+                children: [],
+                status_breakdown: {},
+                priorityLevel: ovr.priorityLevel || normalizePriority(meta.priority),
+                overrideTitle: ovr.overrideTitle,
+                overrideItems: ovr.overrideItems,
+                earliestStartWorkday: 0,
+                laneIndex: latestEpics.length + toAutoAdd.length,
+                custom: false,
+              })
+            } else {
+              cantAdd.push({ ticket: allMissing.find((w) => w.epic === epicKey)?.ticket ?? epicKey, epic: epicKey })
+            }
+          }
+
+          if (toAutoAdd.length > 0) {
+            setAutoAddedInfo((prev) => [...new Set([...prev, ...toAutoAdd.map((e) => e.key)])])
+            // Load children for original + newly added epics.
+            const res2 = await api<ChildrenResponse>('/planner/api/epic-children', {
+              method: 'POST',
+              body: JSON.stringify({ epic_keys: [...new Set([...keys, ...toAutoAdd.map((e) => e.key)])] }),
+            })
+            const byKey2: Record<string, { children: EpicChild[]; status_breakdown: Record<string, number> }> = {}
+            for (const e of res2.epics || []) byKey2[e.key] = e
+            // Single functional update so we compose on top of whatever state React
+            // has committed (including the user's concurrently toggled epic).
+            setSelectedEpics((prev) => {
+              const have = new Set(prev.map((e) => e.key))
+              const toAdd = toAutoAdd.filter((e) => !have.has(e.key))
+              return autoOrderEpics([...prev, ...toAdd].map((e) => byKey2[e.key] ? { ...e, children: byKey2[e.key].children, status_breakdown: byKey2[e.key].status_breakdown } : e))
+            })
+            setStatusInScope((prev) => {
+              const next = { ...prev }
+              for (const s of res2.all_statuses || []) if (!(s.name in next)) next[s.name] = !DEFAULT_EXCLUDED_STATUSES.has(s.name)
+              return next
+            })
+          }
+
+          setDepWarning(cantAdd)
+        } catch { /* non-fatal */ }
+      } else {
+        setDepWarning([])
+      }
+
       setStatusInScope((prev) => {
         const next = { ...prev }
         for (const s of res.all_statuses || []) {
@@ -202,7 +321,7 @@ export default function Planner() {
     }
     // Hydrate overrides so a re-checked Jira epic comes back with edits intact.
     const ovr = epicOverrides[epic.key] || {}
-    const defaultPriority = epic.custom ? epic.priorityLevel || 'Medium' : normalizePriority(epic.priority)
+    const defaultPriority = normalizePriority(epic.priority)
     const entry: SelectedEpic = {
       key: epic.key,
       summary: epic.summary,
@@ -215,33 +334,12 @@ export default function Planner() {
       overrideItems: ovr.overrideItems,
       earliestStartWorkday: nextSlotWorkdayForSquad(project),
       laneIndex: 0,
-      custom: !!epic.custom,
-      customItems: epic.custom ? Math.max(0, Number(epic.customItems || 0)) : undefined,
+      custom: false,
     }
     const next = [...selectedEpics, entry]
     setSelectedEpics(next)
-    if (!epic.custom) await refreshChildren(next.filter((e) => !e.custom).map((e) => e.key))
+    await refreshChildren(next.map((e) => e.key))
   }, [selectedEpics, epicOverrides, nextColor, nextSlotWorkdayForSquad, refreshChildren])
-
-  const customEpicsForSquad = customEpics[squad] || []
-
-  const addCustomEpic = useCallback(({ name, items, priority }: { name: string; items: number; priority: string }) => {
-    const project = squad
-    const summary = (name || '').trim() || 'Custom epic'
-    const count = Math.max(0, Math.round(Number(items || 0)))
-    customEpicSeq.current += 1
-    const key = `CUST-${customEpicSeq.current}`
-    setNextCustomKey(`CUST-${customEpicSeq.current + 1}`)
-    const epic: RecentEpic = { key, summary, custom: true, customItems: count, child_count: count, priorityLevel: normalizePriority(priority) }
-    setCustomEpics((prev) => ({ ...prev, [project]: [epic, ...(prev[project] || [])] }))
-    void toggleEpic(project, epic)   // select it immediately (custom → no children fetch)
-    scopeRef.current?.resetSortForNew()
-  }, [squad, toggleEpic])
-
-  const removeCustomEpic = useCallback((key: string) => {
-    setSelectedEpics((prev) => prev.filter((e) => e.key !== key))
-    setCustomEpics((prev) => ({ ...prev, [squad]: (prev[squad] || []).filter((e) => e.key !== key) }))
-  }, [squad])
 
   const toggleStatus = useCallback((name: string) => {
     setStatusInScope((prev) => ({ ...prev, [name]: !prev[name] }))
@@ -251,51 +349,15 @@ export default function Planner() {
   const setPriority = useCallback((key: string, level: string) => {
     setSelectedEpics((prev) => prev.map((e) => (e.key === key ? { ...e, priorityLevel: level } : e)))
     setEpicOverrides((prev) => ({ ...prev, [key]: { ...(prev[key] || {}), priorityLevel: level } }))
-    setCustomEpics((prev) => {
-      let changed = false
-      const next: Record<string, RecentEpic[]> = {}
-      for (const [proj, list] of Object.entries(prev)) {
-        if (list.some((e) => e.key === key)) {
-          next[proj] = list.map((e) => (e.key === key ? { ...e, priorityLevel: level } : e))
-          changed = true
-        } else next[proj] = list
-      }
-      return changed ? next : prev
-    })
   }, [])
 
   /** Commit a row's edit-mode changes from the Scope table. */
-  const updateEpic = useCallback(({ key, custom, fields, baseline: base }: EpicEditPayload) => {
+  const updateEpic = useCallback(({ key, fields, baseline: base }: EpicEditPayload) => {
     const hasTitle = fields.title !== undefined
     const hasItems = fields.items !== undefined
     const hasPriority = fields.priority !== undefined
 
-    if (custom) {
-      setSelectedEpics((prev) => prev.map((e) => {
-        if (e.key !== key) return e
-        const next = { ...e }
-        if (hasTitle) next.summary = fields.title!
-        if (hasItems) next.customItems = Number(fields.items)
-        return next
-      }))
-      setCustomEpics((prev) => {
-        const next: Record<string, RecentEpic[]> = {}
-        for (const [proj, list] of Object.entries(prev)) {
-          next[proj] = list.map((c) => {
-            if (c.key !== key) return c
-            const n = { ...c }
-            if (hasTitle) n.summary = fields.title!
-            if (hasItems) { n.customItems = Number(fields.items); n.child_count = Number(fields.items) }
-            return n
-          })
-        }
-        return next
-      })
-      if (hasPriority) setPriority(key, fields.priority!)
-      return
-    }
-
-    // Jira rows: persist overrides only when the value truly diverges.
+    // Persist overrides only when the value truly diverges.
     setEpicOverrides((prev) => {
       const cur = { ...(prev[key] || {}) }
       if (hasTitle) {
@@ -387,10 +449,11 @@ export default function Planner() {
   const previewBaseline = useMemo<SimResult | null>(() => {
     if (!dragPreview) return null
     const collapsed = collapseVacatedGap(selectedEpics, dragPreview.epicKey, dragPreview.laneIndex ?? null)
-    const list = applyReorder(collapsed, dragPreview).filter((e) => e.project === squad)
-    if (!list.length) return null
-    return simulate({ teams: [buildTeam()], epics: buildEpics(list), start: baselineStart, focusMode: 'parallel' })
-  }, [dragPreview, collapseVacatedGap, applyReorder, selectedEpics, squad, buildTeam, buildEpics, baselineStart])
+    const list = applyReorder(collapsed, dragPreview).filter((e) => isAllProjects || e.project === squad)
+    const teams = buildTeams()
+    if (!list.length || !teams.length) return null
+    return simulate({ teams, epics: buildEpics(list), start: baselineStart, focusMode: 'parallel' })
+  }, [dragPreview, collapseVacatedGap, applyReorder, selectedEpics, squad, isAllProjects, buildTeams, buildEpics, baselineStart])
 
   const reorder = useCallback((change: ReorderChange) => {
     setDragPreview(null)
@@ -409,6 +472,12 @@ export default function Planner() {
     })
   }, [collapseVacatedGap])
 
+  /** Set overrideItems on a timeline bar resize. */
+  const resizeEpic = useCallback((epicKey: string, newItems: number) => {
+    setEpicOverrides((prev) => ({ ...prev, [epicKey]: { ...(prev[epicKey] || {}), overrideItems: newItems } }))
+    setSelectedEpics((prev) => prev.map((e) => (e.key === epicKey ? { ...e, overrideItems: newItems } : e)))
+  }, [])
+
   // Keep `period` referenced (parity with the Vue version's reactive use).
   void period
 
@@ -416,7 +485,7 @@ export default function Planner() {
     <div className="fixed inset-0 flex bg-white dark:bg-slate-900">
       <PlannerSidebar
         squad={squad}
-        squads={PROJECTS}
+        squads={squadList}
         asOf={throughputMeta.as_of}
         monthsUsed={throughputMeta.months_used?.length || 0}
         monthsExcluded={throughputMeta.months_excluded?.length || 0}
@@ -429,13 +498,32 @@ export default function Planner() {
           {globalError && (
             <div className="px-3 py-2 rounded-lg bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-300 text-sm">{globalError}</div>
           )}
+          {(autoAddedInfo.length > 0 || depWarning.length > 0) && (
+            <div className="flex flex-col gap-2">
+              {autoAddedInfo.length > 0 && (
+                <div className="px-3 py-2 rounded-lg bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-700 text-blue-800 dark:text-blue-300 text-xs flex items-start gap-2">
+                  <span className="shrink-0 font-semibold mt-0.5">Auto-added</span>
+                  <span className="flex-1">
+                    {autoAddedInfo.join(', ')} {autoAddedInfo.length === 1 ? 'was' : 'were'} automatically added to the board — {autoAddedInfo.length === 1 ? 'it has' : 'they have'} blocking dependencies with other epics in your plan.
+                  </span>
+                  <button className="shrink-0 text-blue-600 dark:text-blue-400 hover:text-blue-900 dark:hover:text-blue-200 font-medium" onClick={() => setAutoAddedInfo([])}>Dismiss</button>
+                </div>
+              )}
+              {depWarning.length > 0 && (
+                <div className="px-3 py-2 rounded-lg bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-700 text-amber-800 dark:text-amber-300 text-xs flex items-start gap-2">
+                  <span className="shrink-0 font-semibold mt-0.5">Cross-project dependencies</span>
+                  <span className="flex-1">
+                    {depWarning.map((w) => w.epic).join(', ')} {depWarning.length === 1 ? 'is' : 'are'} in a different project and cannot be added automatically, but {depWarning.length === 1 ? 'has' : 'have'} tickets that block or are blocked by tickets in this plan.
+                  </span>
+                  <button className="shrink-0 text-amber-600 dark:text-amber-400 hover:text-amber-900 dark:hover:text-amber-200 font-medium" onClick={() => setDepWarning([])}>Dismiss</button>
+                </div>
+              )}
+            </div>
+          )}
 
           <PlannerScope
-            ref={scopeRef}
             squad={squad}
             recentEpicsByProject={recentEpicsByProject}
-            customEpics={customEpicsForSquad}
-            nextCustomKey={nextCustomKey}
             loadingEpicsFor={loadingEpicsFor}
             selectedEpics={selectedEpics}
             epicOverrides={epicOverrides}
@@ -444,14 +532,12 @@ export default function Planner() {
             jiraUrl={jiraUrl}
             onToggleEpic={(project, epic) => void toggleEpic(project, epic)}
             onToggleStatus={toggleStatus}
-            onAddCustomEpic={addCustomEpic}
-            onRemoveCustomEpic={removeCustomEpic}
             onUpdateEpic={updateEpic}
           />
 
           <PlannerTimeline
             squad={squad}
-            team={teamConfig[squad]}
+            team={timelineTeam}
             startDate={startDate}
             baseline={baseline}
             previewBaseline={previewBaseline}
@@ -459,6 +545,7 @@ export default function Planner() {
             onDragPreview={setDragPreview}
             onReorder={reorder}
             onRemove={removeEpic}
+            onResizeEpic={resizeEpic}
           />
         </div>
       </div>

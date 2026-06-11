@@ -29,45 +29,42 @@ def _human_size(size) -> str:
 
 
 def build_prompt(detail: dict, include: dict, instruction: str) -> str:
-    inc = {k: True for k in INCLUDE_KEYS}
-    inc.update({k: bool(v) for k, v in (include or {}).items() if k in INCLUDE_KEYS})
-
     blocks = []
 
-    if inc["description"]:
-        blocks.append(_block("Description", detail.get("description") or "(no description)"))
+    desc = detail.get("description") or ""
+    blocks.append(_block("Description", desc if desc.strip() else "(no description provided)"))
 
     epic = detail.get("epic")
-    if inc["epic"] and epic:
+    if epic:
         body = f"[{epic['key']}] {epic.get('summary') or '(summary not synced)'}"
         if epic.get("description"):
-            body += "\n" + epic["description"]
-        blocks.append(_block("Epic", body))
+            body += "\n\n" + epic["description"]
+        blocks.append(_block("Epic context", body))
 
     links = detail.get("links") or []
-    if inc["links"] and links:
+    if links:
         lines = [
-            f"- {l['relation']} [{l['key']}]"
-            + (f" {l['summary']}" if l.get("summary") else "")
-            + (f" (status: {l['status']})" if l.get("status") else "")
+            f"- **{l['relation']}** [{l['key']}]"
+            + (f" — {l['summary']}" if l.get("summary") else "")
+            + (f" *(status: {l['status']})*" if l.get("status") else "")
             for l in links
         ]
         blocks.append(_block("Linked issues", "\n".join(lines)))
 
     attachments = detail.get("attachments") or []
-    if inc["attachments"] and attachments:
+    if attachments:
         lines = [
-            f"- {a['filename']} ({a.get('mimeType') or 'unknown type'}, {_human_size(a.get('size'))})"
+            f"- `{a['filename']}` ({a.get('mimeType') or 'unknown type'}{', ' + _human_size(a.get('size')) if a.get('size') else ''})"
             for a in attachments
         ]
         blocks.append(_block(
-            "Attachments (filenames only — contents are not synced locally; fetch from Jira if needed)",
+            "Attachments (filenames only — contents not synced; fetch from Jira if needed)",
             "\n".join(lines),
         ))
 
     instruction_block = ""
     if instruction.strip():
-        instruction_block = f"\nAdditional instructions from the requester:\n{instruction.strip()}\n"
+        instruction_block = f"\n## Additional instructions\n\n{instruction.strip()}\n"
 
     template = (PROMPTS_DIR / "ticket_prompt.txt").read_text()
     return template.format(

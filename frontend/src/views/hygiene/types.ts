@@ -7,6 +7,12 @@ export interface HygieneItem {
   summary: string
   points: number | null
   detail: string
+  date?: string
+}
+
+export interface FindingRow extends HygieneItem {
+  rule: string
+  ruleId: string
 }
 
 export interface RuleResult {

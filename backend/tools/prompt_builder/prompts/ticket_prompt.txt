@@ -1,12 +1,20 @@
-You are Claude, assisting a software engineer with a Jira ticket. Read the ticket context below, then complete the work it describes.
+# Ticket: {key} — {summary}
 
-Ticket: {key} — {summary}
-Type: {issue_type}  Priority: {priority}  Status: {status}  Project: {project}
+**Type:** {issue_type} | **Priority:** {priority} | **Status:** {status} | **Project:** {project}
 
 {context_blocks}
-Guidelines:
-- Treat the ticket description as the source of truth for requirements.
-- The epic, linked issues and attachments are supporting context, not additional scope.
-- If a requirement is ambiguous or missing, ask for clarification instead of guessing.
-- When done, summarise what you changed and how it satisfies the ticket.
+---
+
+## Task
+
+Implement the work described in the ticket above.
+
+**Working guidelines:**
+- The description is the source of truth for requirements and acceptance criteria.
+- The epic provides the strategic context — understand why this matters, but don't expand scope beyond the ticket.
+- Linked issues show dependencies and related work — check their status before starting.
+- Attachments list referenced files; fetch from Jira if their content is needed.
+- If a requirement is ambiguous, surface the ambiguity and propose the most reasonable interpretation before proceeding.
+- Prefer small, focused commits that map cleanly to parts of the ticket.
+- After implementation, confirm which acceptance criteria are met and flag anything that remains open.
 {instruction_block}

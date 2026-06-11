@@ -15,7 +15,7 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from config import PROJECTS, load_config, validate_project
-from mirror import get_mirror
+from mirror import TERMINAL_STATUSES, get_mirror
 from tools.prompt_builder.prompt import build_prompt
 from tools.release_notes.adf import field_text
 
@@ -113,28 +113,62 @@ def _ticket_detail(key: str) -> dict:
 
 # ── Routes ─────────────────────────────────────────────────────────────────────
 
+@router.get("/api/squads")
+def api_squads(project: str = Query(DEFAULT_PROJECT)):
+    if project != "ALL":
+        validate_project(project)
+    try:
+        labels: set = set()
+        m = get_mirror()
+        for t in m.tickets:
+            if project != "ALL" and _project_of(t) != project:
+                continue
+            f = t.get("fields") or {}
+            labels.update(f.get("labels") or [])
+        return {"squads": sorted(labels)}
+    except Exception:
+        log.exception("Error listing squads for %s", project)
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
 @router.get("/api/tickets")
 def api_tickets(
-    project: str = Query(DEFAULT_PROJECT),
-    search:  str = Query(""),
-    limit:   int = Query(30),
-    offset:  int = Query(0),
+    project:    str  = Query(DEFAULT_PROJECT),
+    squad:      str  = Query(""),
+    search:     str  = Query(""),
+    unfinished: bool = Query(True),
+    finished:   bool = Query(False),
+    limit:      int  = Query(30),
+    offset:     int  = Query(0),
 ):
-    validate_project(project)
+    if project != "ALL":
+        validate_project(project)
     needle = search.strip().lower()
+    squad_filter = squad.strip()
     items = []
     for t in get_mirror().tickets:
-        if _project_of(t) != project:
+        if project != "ALL" and _project_of(t) != project:
             continue
         f = t.get("fields") or {}
+        itype = (f.get("issuetype") or {}).get("name", "")
+        if itype == "Epic":
+            continue
+        status = (f.get("status") or {}).get("name", "")
+        is_finished = status in TERMINAL_STATUSES
+        if is_finished and not finished:
+            continue
+        if not is_finished and not unfinished:
+            continue
         key, summary = t.get("key", ""), f.get("summary", "") or ""
         if needle and needle not in key.lower() and needle not in summary.lower():
+            continue
+        if squad_filter and squad_filter not in (f.get("labels") or []):
             continue
         items.append({
             "key":      key,
             "summary":  summary,
-            "type":     (f.get("issuetype") or {}).get("name", ""),
-            "status":   (f.get("status") or {}).get("name", ""),
+            "type":     itype,
+            "status":   status,
             "updated":  (f.get("updated") or "")[:10],
         })
     items.sort(key=lambda i: (i["updated"], i["key"]), reverse=True)

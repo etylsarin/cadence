@@ -179,10 +179,7 @@ function PromptFlyout({ open, onClose, loading, text, copyLabel, onCopy }: {
       <div className={`absolute inset-0 bg-black/20 transition-opacity duration-150 ${shown ? 'opacity-100' : 'opacity-0'}`} onClick={onClose} />
       <div className={`relative w-[560px] max-w-full h-full bg-white dark:bg-slate-900 shadow-2xl flex flex-col transition-transform duration-200 ${shown ? 'translate-x-0' : 'translate-x-full'}`}>
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 dark:border-slate-700 shrink-0">
-          <div>
-            <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Prompt</h2>
-            <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">release_notes/prompts/release_notes.txt</p>
-          </div>
+          <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Prompt</h2>
           <button className="text-gray-400 dark:text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors" onClick={onClose}><X size={16} /></button>
         </div>
         <div className="flex-1 overflow-y-auto p-5">
@@ -190,7 +187,10 @@ function PromptFlyout({ open, onClose, loading, text, copyLabel, onCopy }: {
             : <pre className="text-xs text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap font-mono">{text}</pre>}
         </div>
         <div className="px-5 py-3 border-t border-gray-100 dark:border-slate-700 shrink-0">
-          <button className="text-xs text-gray-400 dark:text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors" onClick={onCopy}>{copyLabel}</button>
+          <button
+            className="w-full px-4 py-2 rounded-lg bg-gray-900 hover:bg-black dark:bg-slate-700 dark:hover:bg-slate-600 text-white text-sm font-medium transition-colors"
+            onClick={onCopy}
+          >{copyLabel}</button>
         </div>
       </div>
     </div>,

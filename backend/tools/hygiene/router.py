@@ -77,26 +77,30 @@ def _load_stage_map() -> dict:
 EPIC_LINK_FIELD = "customfield_10008"
 POINTS_FIELD    = "customfield_10005"
 
-LOOP_THRESHOLD   = 2    # re-entries into already-visited statuses before flagging
-STALE_DAYS       = 14   # days without a status change before started work is stale
-RETRO_GRACE_DAYS = 3    # closing tickets shortly after a release is normal admin lag
+LOOP_THRESHOLD       = 2    # re-entries into already-visited statuses before flagging
+STALE_DAYS           = 14   # days without a status change before started work is stale
+RETRO_GRACE_DAYS     = 3    # closing tickets shortly after a release is normal admin lag
+MIN_DESCRIPTION_CHARS = 70  # description below this is considered insufficient
 
-EPIC_TYPES   = {"Story", "Task", "Spike"}   # types expected to belong to an epic
-POINTS_TYPES = {"Story"}                    # types expected to carry an estimate
+EPIC_TYPES        = {"Story", "Task", "Spike"}          # types expected to belong to an epic
+POINTS_TYPES      = {"Story"}                           # types expected to carry an estimate
+DESCRIPTION_TYPES = {"Story", "Task", "Spike", "Bug"}   # types expected to have a description
 
 # Abandoned work never feeds velocity, so a missing estimate there is noise.
 ABANDONED_STATUSES = {"Cancelled", "Rejected", "Won't Do"}
 
 RULES = [
-    ("missing_points",    "Missing estimates",
+    ("missing_points",           "Missing estimates",
      "Started Stories without story points — invisible to velocity and points-based metrics."),
-    ("no_epic",           "No epic link",
+    ("no_epic",                  "No epic link",
      "Stories, Tasks and Spikes outside any epic — invisible to roadmap and epic rollups."),
-    ("retro_fix_version", "Suspect fix version",
+    ("insufficient_description", "Insufficient description",
+     f"Stories, Tasks, Bugs and Spikes with missing or very short descriptions (< {MIN_DESCRIPTION_CHARS} chars) — not enough context for estimation, review or release notes."),
+    ("retro_fix_version",        "Suspect fix version",
      "Tagged with a version released before the ticket was created or completed — the tag cannot predate the release."),
-    ("status_loops",      "Status ping-pong",
+    ("status_loops",             "Status ping-pong",
      f"Re-entered already-visited statuses {LOOP_THRESHOLD}+ times — rework loops that skew time-in-status metrics."),
-    ("stale_wip",         "Stale in-progress",
+    ("stale_wip",                "Stale in-progress",
      f"Started work without a status change for {STALE_DAYS}+ days — abandoned or silently blocked."),
 ]
 
@@ -183,6 +187,21 @@ def _check_status_loops(trans: list) -> Optional[str]:
     return f"{total} status re-entries (worst: '{worst}' ×{reentries[worst]})"
 
 
+def _check_insufficient_description(f: dict) -> Optional[str]:
+    itype = ((f.get("issuetype") or {}).get("name", "") or "")
+    if itype not in DESCRIPTION_TYPES:
+        return None
+    status = ((f.get("status") or {}).get("name", "") or "")
+    if status in ABANDONED_STATUSES:
+        return None
+    desc = (f.get("description") or "").strip()
+    if not desc:
+        return "No description"
+    if len(desc) < MIN_DESCRIPTION_CHARS:
+        return f"Description too short ({len(desc)} chars)"
+    return None
+
+
 def _check_stale_wip(f: dict, stage: str, trans: list, now: datetime) -> Optional[str]:
     status = ((f.get("status") or {}).get("name", "") or "")
     if status in TERMINAL_STATUSES or stage not in CYCLE_STAGES:
@@ -216,7 +235,8 @@ def run_audit(project: str) -> dict:
     for t in get_mirror().tickets:
         f = t.get("fields") or {}
         key = t.get("key", "")
-        if ((f.get("project") or {}).get("key", "")) != project:
+        proj_key = ((f.get("project") or {}).get("key", "")) or key.split("-")[0]
+        if project != "ALL" and proj_key != project:
             continue
         itype = ((f.get("issuetype") or {}).get("name", "") or "")
         if itype == "Epic":
@@ -229,12 +249,14 @@ def run_audit(project: str) -> dict:
         done_dt = _first_terminal_dt(trans)
 
         findings = {
-            "missing_points":    _check_missing_points(f, stage),
-            "no_epic":           _check_no_epic(t, f),
-            "retro_fix_version": _check_retro_fix_version(f, done_dt),
-            "status_loops":      _check_status_loops(trans),
-            "stale_wip":         _check_stale_wip(f, stage, trans, now),
+            "missing_points":           _check_missing_points(f, stage),
+            "no_epic":                  _check_no_epic(t, f),
+            "insufficient_description": _check_insufficient_description(f),
+            "retro_fix_version":        _check_retro_fix_version(f, done_dt),
+            "status_loops":             _check_status_loops(trans),
+            "stale_wip":                _check_stale_wip(f, stage, trans, now),
         }
+        updated = (f.get("updated", "") or "")[:10]
         for rule_id, detail in findings.items():
             if detail is None:
                 continue
@@ -246,6 +268,7 @@ def run_audit(project: str) -> dict:
                 "summary": f.get("summary", "") or "",
                 "points":  _points(f.get(POINTS_FIELD)),
                 "detail":  detail,
+                "date":    updated,
             })
 
     def _natural_key(item: dict) -> tuple:
@@ -274,7 +297,8 @@ def run_audit(project: str) -> dict:
 @router.get("/api/audit")
 def api_audit(project: str = Query(DEFAULT_PROJECT)):
     """Run every hygiene rule over the project's mirrored tickets."""
-    validate_project(project)
+    if project != "ALL":
+        validate_project(project)
     try:
         return run_audit(project)
     except Exception:
@@ -303,7 +327,8 @@ _MAX_KEYS_PER_RULE = 20
 def api_suggest(req: SuggestRequest):
     """Draft an AI fix plan from the audit findings. The audit is recomputed
     server-side; only this endpoint sends data to the AI provider."""
-    validate_project(req.project)
+    if req.project != "ALL":
+        validate_project(req.project)
     try:
         audit = run_audit(req.project)
         lines = [f"Project {req.project}: {audit['scanned']} tickets scanned, "

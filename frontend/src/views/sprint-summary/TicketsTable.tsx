@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react'
 import TagBadge from '@/components/TagBadge'
 import AppCheckbox from '@/components/AppCheckbox'
 import type { SsIssue } from './types'
@@ -17,6 +18,47 @@ function fmt(n: number | null | undefined): string {
   return Number(n) % 1 === 0 ? String(Number(n)) : Number(n).toFixed(1)
 }
 
+type SortKey = 'scope' | 'key' | 'points' | 'type' | 'summary' | 'status'
+type SortDir = 'asc' | 'desc'
+
+function naturalKey(key: string): [string, number] {
+  const i = key.lastIndexOf('-')
+  if (i < 0) return [key, 0]
+  const num = parseInt(key.slice(i + 1), 10)
+  return [key.slice(0, i), isNaN(num) ? 0 : num]
+}
+
+function compare(a: SsIssue, b: SsIssue, key: SortKey, dir: SortDir): number {
+  let diff = 0
+  if (key === 'key') {
+    const [ap, an] = naturalKey(a.key)
+    const [bp, bn] = naturalKey(b.key)
+    diff = ap < bp ? -1 : ap > bp ? 1 : an - bn
+  } else if (key === 'points') {
+    diff = (a.points ?? -1) - (b.points ?? -1)
+  } else if (key === 'scope') {
+    const av = a.injected ? 'injected' : 'planned'
+    const bv = b.injected ? 'injected' : 'planned'
+    diff = av < bv ? -1 : av > bv ? 1 : 0
+  } else {
+    const av = (a[key] ?? '') as string
+    const bv = (b[key] ?? '') as string
+    diff = av < bv ? -1 : av > bv ? 1 : 0
+  }
+  return dir === 'asc' ? diff : -diff
+}
+
+interface ColDef { key: SortKey; label: string; className?: string }
+
+const COLUMNS: ColDef[] = [
+  { key: 'scope',   label: 'Scope',   className: 'w-px' },
+  { key: 'key',     label: 'Key',     className: 'whitespace-nowrap w-px' },
+  { key: 'points',  label: 'SP',      className: 'text-right w-px' },
+  { key: 'type',    label: 'Type',    className: 'w-px' },
+  { key: 'summary', label: 'Summary', className: 'w-full' },
+  { key: 'status',  label: 'Status',  className: 'whitespace-nowrap w-px' },
+]
+
 interface Props {
   issues?: SsIssue[]
   jiraUrl?: string
@@ -29,35 +71,28 @@ export default function TicketsTable({ issues = [], jiraUrl = '' }: Props) {
   const [fApproved, setFApproved]   = useFilterPref('approved', true)
   const [fOther, setFOther]         = useFilterPref('other', true)
 
-  const [copyJsonLabel, setCopyJsonLabel] = useState('Copy JSON')
+  const [sortKey, setSortKey] = useState<SortKey>('key')
+  const [sortDir, setSortDir] = useState<SortDir>('asc')
 
-  const visible = useMemo(() => issues.filter((i) => {
-    const scope   = i.injected ? fInjected : fPlanned
-    const outcome = i.approved ? fApproved : i.delivered ? fDelivered : fOther
-    return scope && outcome
-  }), [issues, fPlanned, fInjected, fDelivered, fApproved, fOther])
+  function handleSort(key: SortKey) {
+    if (key === sortKey) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
+    } else {
+      setSortKey(key)
+      setSortDir(key === 'points' ? 'desc' : 'asc')
+    }
+  }
+
+  const visible = useMemo(() => {
+    const filtered = issues.filter((i) => {
+      const scope   = i.injected ? fInjected : fPlanned
+      const outcome = i.approved ? fApproved : i.delivered ? fDelivered : fOther
+      return scope && outcome
+    })
+    return [...filtered].sort((a, b) => compare(a, b, sortKey, sortDir))
+  }, [issues, fPlanned, fInjected, fDelivered, fApproved, fOther, sortKey, sortDir])
 
   const spTotal = useMemo(() => visible.reduce((s, i) => s + (i.points || 0), 0), [visible])
-
-  function groupByEpic() {
-    const epicOrder: string[] = []
-    const byEpic: Record<string, { epicKey: string | null; epicName: string; issues: SsIssue[] }> = {}
-    for (const i of visible) {
-      const key  = i.epicKey || '__none__'
-      const name = i.epicName || (i.epicKey ? i.epicKey : 'No Epic')
-      if (!byEpic[key]) { byEpic[key] = { epicKey: key === '__none__' ? null : key, epicName: name, issues: [] }; epicOrder.push(key) }
-      byEpic[key].issues.push(i)
-    }
-    return { epicOrder, byEpic }
-  }
-
-  function copyJson() {
-    if (!visible.length) return
-    const { epicOrder, byEpic } = groupByEpic()
-    navigator.clipboard.writeText(JSON.stringify(epicOrder.map((k) => byEpic[k]), null, 2))
-    setCopyJsonLabel('Copied!')
-    setTimeout(() => setCopyJsonLabel('Copy JSON'), 2000)
-  }
 
   return (
     <div>
@@ -80,23 +115,34 @@ export default function TicketsTable({ issues = [], jiraUrl = '' }: Props) {
           {visible.length} issues
           {spTotal ? <span> · {fmt(spTotal)} SP</span> : null}
         </span>
-
-        <div className="ml-auto flex gap-2">
-          <button className="px-3 py-1 rounded border border-gray-200 dark:border-slate-700 text-gray-600 dark:text-gray-400 hover:border-gray-900 dark:hover:border-slate-400 hover:text-gray-900 dark:hover:text-gray-100 transition-colors" onClick={copyJson}>{copyJsonLabel}</button>
-        </div>
       </div>
 
       {/* Table */}
       <div className="overflow-x-auto rounded-lg border border-gray-100 dark:border-slate-700">
         <table className="w-full text-sm border-collapse">
-          <thead>
+          <thead className="sticky top-0 z-10">
             <tr className="bg-gray-50 dark:bg-slate-800 text-left text-xs text-gray-500 dark:text-gray-400 border-b border-gray-100 dark:border-slate-700">
-              <th className="px-3 py-2 font-medium">Scope</th>
-              <th className="px-3 py-2 font-medium whitespace-nowrap">Key</th>
-              <th className="px-3 py-2 font-medium text-right">SP</th>
-              <th className="px-3 py-2 font-medium">Type</th>
-              <th className="px-3 py-2 font-medium w-full">Summary</th>
-              <th className="px-3 py-2 font-medium">Status</th>
+              {COLUMNS.map((col) => {
+                const active = sortKey === col.key
+                return (
+                  <th
+                    key={col.key}
+                    className={`px-3 py-2 font-medium select-none cursor-pointer hover:text-gray-800 dark:hover:text-gray-200 transition-colors ${col.className ?? ''}`}
+                    onClick={() => handleSort(col.key)}
+                  >
+                    <span className="inline-flex items-center gap-1">
+                      {col.label}
+                      {active ? (
+                        sortDir === 'asc'
+                          ? <ChevronUp size={11} className="text-gray-700 dark:text-gray-300 shrink-0" />
+                          : <ChevronDown size={11} className="text-gray-700 dark:text-gray-300 shrink-0" />
+                      ) : (
+                        <ChevronsUpDown size={11} className="text-gray-300 dark:text-gray-600 shrink-0" />
+                      )}
+                    </span>
+                  </th>
+                )
+              })}
             </tr>
           </thead>
           <tbody>

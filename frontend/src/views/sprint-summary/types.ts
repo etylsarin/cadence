@@ -5,6 +5,7 @@ export interface Sprint {
   state?: string
   startDate?: string
   endDate?: string
+  squads?: string[]
 }
 
 export interface SsIssue {
@@ -20,6 +21,7 @@ export interface SsIssue {
   epicKey?: string | null
   epicName?: string
   fixVersion?: string
+  labels?: string[]
 }
 
 interface MetricCell { count: number; points: number }

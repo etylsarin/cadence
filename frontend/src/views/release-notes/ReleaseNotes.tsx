@@ -91,12 +91,6 @@ export default function ReleaseNotes() {
                 ) : null}
               </div>
 
-              {detail && (
-                <div className="mt-2 pl-5 text-xs">
-                  <span className="text-[10px] text-gray-400 dark:text-gray-500 mr-1">Description</span>
-                  <span className="text-gray-700 dark:text-gray-300">{detail.description || '—'}</span>
-                </div>
-              )}
               {error && <p className="mt-2 text-sm text-red-500 pl-5">{error}</p>}
             </div>
 

@@ -13,6 +13,8 @@ export interface EpicChild {
   type: string
   status: string
   parent: string
+  blocks?: string[]
+  blocked_by?: string[]
 }
 
 /** An epic as listed by /planner/api/epics (or a user-created custom epic). */
@@ -25,6 +27,7 @@ export interface RecentEpic {
   updated?: string
   child_count?: number
   child_status_counts?: Record<string, number>
+  project?: string
   custom?: boolean
   customItems?: number
   priorityLevel?: string
@@ -62,7 +65,6 @@ export interface ReorderChange {
 
 export interface EpicEditPayload {
   key: string
-  custom: boolean
   fields: { title?: string; items?: number; priority?: string }
   baseline: { title: string; items: number }
 }

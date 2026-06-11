@@ -157,7 +157,9 @@ def _build_issues(project: str, months: set, types: list[str]) -> list[dict]:
     stage_map = load_flow_config()
     out: list[dict] = []
     for r in rows:
-        if r.get("project") != project or r.get("query") not in months:
+        if project != "ALL" and r.get("project") != project:
+            continue
+        if r.get("query") not in months:
             continue
         if types and r.get("type") not in types:
             continue
@@ -210,7 +212,8 @@ def api_flow(
     """Flow summary for completed issues in the selected timeframe: cycle/lead
     time percentiles, flow efficiency, per-stage breakdown, monthly trend and
     the per-issue rows behind them (for drill tables)."""
-    validate_project(project)
+    if project != "ALL":
+        validate_project(project)
     if gran not in ("Y", "Q", "M"):
         raise HTTPException(status_code=400, detail=f"Invalid gran: {gran!r}")
     months = get_months(gran, years, periods)
@@ -288,14 +291,15 @@ def api_aging(
     age and time in current status. The historic lead-time P85 for the same
     project/types is included as the reference line — age is measured from
     creation, so lead time (created → done) is the like-for-like comparator."""
-    validate_project(project)
+    if project != "ALL":
+        validate_project(project)
     try:
         stage_map = load_flow_config()
         now = datetime.now(timezone.utc)
         items = []
         for t in get_mirror().tickets:
             f = t.get("fields") or {}
-            if ((f.get("project") or {}).get("key", "")) != project:
+            if project != "ALL" and ((f.get("project") or {}).get("key", "")) != project:
                 continue
             if ((f.get("issuetype") or {}).get("name", "")) not in types:
                 continue
@@ -328,7 +332,9 @@ def api_aging(
         rows, status_cols = _load_rows()
         leads = []
         for r in rows:
-            if r.get("project") != project or (types and r.get("type") not in types):
+            if project != "ALL" and r.get("project") != project:
+                continue
+            if types and r.get("type") not in types:
                 continue
             sd = _issue_stage_days(r, status_cols, stage_map)
             leads.append(sum(d for s, d in sd.items() if s in CYCLE_STAGES) + sd.get("pre_work", 0.0))

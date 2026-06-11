@@ -68,6 +68,8 @@ export interface TimeframePickerHandle {
 interface Props {
   startYear?: number
   initialGran?: Col
+  /** Start with multi-select enabled so the user can pick several periods immediately. */
+  initialMulti?: boolean
   keyboardNav?: boolean
   /** Vue's `#actions` slot — inline buttons in the header row (e.g. A/B swap). */
   actions?: ReactNode
@@ -75,11 +77,11 @@ interface Props {
 }
 
 const TimeframePicker = forwardRef<TimeframePickerHandle, Props>(function TimeframePicker(
-  { startYear: startYearProp = new Date().getFullYear() - 2, initialGran = 'month', keyboardNav = true, actions, onChange },
+  { startYear: startYearProp = new Date().getFullYear() - 2, initialGran = 'month', initialMulti = false, keyboardNav = true, actions, onChange },
   ref,
 ) {
   const [startYear, setStartYear]   = useState(startYearProp)
-  const [multiSelect, setMultiSelect] = useState(false)
+  const [multiSelect, setMultiSelect] = useState(initialMulti)
   const [activeCol, setActiveCol]   = useState<Col>(initialGran)
   const [selYears, setSelYears]     = useState<Set<number>>(() => new Set([THIS_YEAR]))
   const [selQtrs, setSelQtrs]       = useState<Set<string>>(() => new Set([`${THIS_YEAR}-Q${THIS_Q + 1}`]))
@@ -119,9 +121,23 @@ const TimeframePicker = forwardRef<TimeframePickerHandle, Props>(function Timefr
     return new Set([...s, key])
   }
 
-  const clickYear  = (item: YearItem)   => { setActiveCol('year');    setSelYears((s) => toggleSet(s, item.year)) }
-  const clickQtr   = (item: PeriodItem) => { setActiveCol('quarter'); setSelQtrs((s) => toggleSet(s, item.key)) }
-  const clickMonth = (item: PeriodItem) => { setActiveCol('month');   setSelMonths((s) => toggleSet(s, item.key)) }
+  // When the user switches to a different column, always start fresh with just
+  // the clicked item — don't carry over a prior multi-selection from that col.
+  const clickYear  = (item: YearItem)   => {
+    const switching = activeCol !== 'year'
+    setActiveCol('year')
+    setSelYears(switching ? new Set([item.year]) : (s) => toggleSet(s, item.year))
+  }
+  const clickQtr   = (item: PeriodItem) => {
+    const switching = activeCol !== 'quarter'
+    setActiveCol('quarter')
+    setSelQtrs(switching ? new Set([item.key]) : (s) => toggleSet(s, item.key))
+  }
+  const clickMonth = (item: PeriodItem) => {
+    const switching = activeCol !== 'month'
+    setActiveCol('month')
+    setSelMonths(switching ? new Set([item.key]) : (s) => toggleSet(s, item.key))
+  }
 
   // ── Keyboard nav (optional) ─────────────────────────────────────────────────
   const latest = useRef({ activeCol, selYears, selQtrs, selMonths, startYear })
@@ -209,14 +225,14 @@ const TimeframePicker = forwardRef<TimeframePickerHandle, Props>(function Timefr
 
   const colHead = (col: Col, label: string) => (
     <div
-      className={`text-[10px] text-center mb-1 pb-0.5 border-b transition-colors ${
+      className={`text-xs text-center mb-1 pb-0.5 border-b transition-colors ${
         activeCol === col ? 'text-gray-700 dark:text-gray-300 border-gray-400 dark:border-slate-500' : 'text-gray-400 border-gray-100 dark:border-slate-700'
       }`}
     >{label}</div>
   )
 
   const itemBtnClass = (active: boolean) =>
-    `text-center py-px rounded text-[10px] leading-tight transition-colors ${
+    `text-center py-0.5 rounded text-xs leading-tight transition-colors ${
       active ? 'bg-gray-900 dark:bg-slate-600 text-white dark:text-gray-100' : 'text-gray-600 dark:text-gray-300 hover:bg-sidebar-hover'
     }`
 
@@ -229,13 +245,22 @@ const TimeframePicker = forwardRef<TimeframePickerHandle, Props>(function Timefr
           className={`px-1.5 py-0.5 rounded text-[10px] transition-colors ${
             multiSelect ? 'bg-gray-900 dark:bg-slate-600 text-white dark:text-gray-100' : 'text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-700'
           }`}
-          onClick={() => setMultiSelect((v) => !v)}
+          onClick={() => {
+            if (multiSelect) {
+              // Collapse the active column's selection to the most-recent item
+              // (lists are newest-first, so the first hit in list order is most recent).
+              if (activeCol === 'year') setSelYears(s => s.size > 1 ? new Set([yearList.find(i => s.has(i.year))?.year ?? [...s][0]]) : s)
+              else if (activeCol === 'quarter') setSelQtrs(s => s.size > 1 ? new Set([quarterList.find(i => s.has(i.key))?.key ?? [...s][0]]) : s)
+              else setSelMonths(s => s.size > 1 ? new Set([monthList.find(i => s.has(i.key))?.key ?? [...s][0]]) : s)
+            }
+            setMultiSelect(v => !v)
+          }}
         >multi</button>
       </div>
 
       <div className="flex gap-1">
         {/* Year */}
-        <div className="flex flex-col w-12 flex-shrink-0">
+        <div className="flex flex-col w-14 flex-shrink-0">
           {colHead('year', 'Year')}
           <div ref={yearScrollEl} className={`col-scroll flex flex-col gap-px ${atEnd.year ? 'at-end' : ''}`}>
             {yearList.map((item) => {

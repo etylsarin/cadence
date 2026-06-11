@@ -3,11 +3,11 @@ import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import { Sparkles } from 'lucide-react'
 import HygieneSidebar from './HygieneSidebar'
-import RuleSection from './RuleSection'
+import FindingsTable from './RuleSection'
 import EmptyState from '@/components/EmptyState'
 import { api } from '@/lib/api'
-import { PROJECTS, useProject } from '@/hooks/useProject'
-import type { AuditData } from './types'
+import { ALL_SQUADS, useProject } from '@/hooks/useProject'
+import type { AuditData, FindingRow } from './types'
 
 export default function Hygiene() {
   const { project, set: setProject } = useProject()
@@ -65,6 +65,17 @@ export default function Hygiene() {
     () => (audit?.rules ?? []).filter((r) => !hiddenRules.has(r.id)),
     [audit, hiddenRules],
   )
+
+  const findings = useMemo<FindingRow[]>(() => {
+    const rows: FindingRow[] = []
+    for (const rule of visibleRules) {
+      for (const item of rule.items) {
+        rows.push({ ...item, rule: rule.label, ruleId: rule.id })
+      }
+    }
+    return rows
+  }, [visibleRules])
+
   const cleanPct = audit && audit.scanned ? Math.round((audit.clean / audit.scanned) * 100) : null
 
   const kpis = audit && [
@@ -78,7 +89,7 @@ export default function Hygiene() {
     <div className="flex h-screen overflow-hidden bg-white dark:bg-slate-900">
       <HygieneSidebar
         squad={project}
-        squads={PROJECTS}
+        squads={ALL_SQUADS}
         rules={audit?.rules ?? []}
         hiddenRules={hiddenRules}
         onSquadChange={setProject}
@@ -142,13 +153,24 @@ export default function Hygiene() {
               )}
             </div>
 
-            {/* Rule sections */}
-            {visibleRules.map((rule) => (
-              <RuleSection key={rule.id} rule={rule} jiraUrl={audit.jira_url} />
-            ))}
-            {audit.rules.length > 0 && visibleRules.length === 0 && (
-              <p className="text-xs text-gray-400 dark:text-gray-500">All rules are hidden — enable them in the sidebar.</p>
-            )}
+            {/* Unified findings table */}
+            <div>
+              <div className="flex items-center gap-2 mb-3">
+                <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">Findings</h3>
+                {findings.length > 0 && (
+                  <span className="text-[10px] bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400 px-2 py-0.5 rounded-full font-medium">{findings.length}</span>
+                )}
+              </div>
+              {findings.length === 0 ? (
+                <p className="text-xs text-gray-400 dark:text-gray-500">
+                  {audit.rules.length > 0 && visibleRules.length === 0
+                    ? 'All rules are hidden — enable them in the sidebar.'
+                    : 'No findings — every visible rule is clean.'}
+                </p>
+              ) : (
+                <FindingsTable rows={findings} jiraUrl={audit.jira_url} />
+              )}
+            </div>
           </div>
         )}
       </div>
