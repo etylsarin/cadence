@@ -23,20 +23,18 @@ new_sqlite_classes = ["Cadence"]
 binding = "DATA"
 bucket_name = "cadence-data"
 
-# Non-secret config (committed). Jira and the AI provider are BOTH mocked:
+# Non-secret config (committed). Jira is mocked; AI is real (Anthropic):
 #   - Jira: the container runs tools.mock_jira on 127.0.0.1:9876, so JIRA_URL
 #     points at localhost; JIRA_EMAIL/JIRA_API_TOKEN are accepted but never
 #     verified (any syntactically valid values work).
-#   - AI: AI_PROVIDER=mock selects the offline deterministic provider
-#     (backend/ai_mock.py), so ANTHROPIC_API_KEY is unused — any value is fine.
-# Only R2 is real; its credentials are secrets (see [secrets] below).
+#   - AI: AI_PROVIDER=anthropic uses the real Anthropic API; the API key is a
+#     secret (ANTHROPIC_API_KEY, see [secrets] below).
 [vars]
 USE_MOCK_JIRA = "1"
 JIRA_URL = "http://127.0.0.1:9876"
 JIRA_EMAIL = "mock@example.com"
 JIRA_API_TOKEN = "mock-token-0000000000"
-AI_PROVIDER = "mock"
-ANTHROPIC_API_KEY = "mock-ai-key"
+AI_PROVIDER = "anthropic"
 R2_BUCKET_NAME = "cadence-data"
 
 [secrets]
@@ -46,11 +44,13 @@ R2_BUCKET_NAME = "cadence-data"
 #       (both must be set, or auth stays disabled / open access).
 #   CADENCE_SESSION_SECRET → signs session cookies; keeps logins valid across
 #       container restarts (any long random string).
+#   ANTHROPIC_API_KEY → real Anthropic API key (AI_PROVIDER=anthropic).
 #   R2_* → real R2 credentials for the s3fs data mount.
 required = [
     "CADENCE_AUTH_USER",
     "CADENCE_AUTH_PASSWORD",
     "CADENCE_SESSION_SECRET",
+    "ANTHROPIC_API_KEY",
     "R2_ACCOUNT_ID",
     "R2_ACCESS_KEY_ID",
     "R2_SECRET_ACCESS_KEY",
