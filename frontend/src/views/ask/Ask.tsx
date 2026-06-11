@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
-import { Send, Loader2, Bot, Sparkles, Search, FileText, List, Ticket, Layers, Activity, Clock, Tag, ChevronDown, ChevronRight } from 'lucide-react'
-import { marked } from 'marked'
-import DOMPurify from 'dompurify'
+import { Send, Loader2, Bot, Sparkles, Search, FileText, List, Ticket, Layers, Activity, Clock, Tag, ChevronDown, ChevronRight, Check } from 'lucide-react'
+import { renderMarkdown, markdownProseClass } from '@/lib/markdown'
 import { useProject, ALL_SQUADS } from '@/hooks/useProject'
 import AppSidebar from '@/components/AppSidebar'
 import SquadSelector from '@/components/SquadSelector'
@@ -39,10 +38,6 @@ const SUGGESTIONS = [
   'Which assignee has the most open tickets right now?',
 ]
 
-function renderMarkdown(text: string): string {
-  return DOMPurify.sanitize(marked.parse(text, { breaks: true }) as string)
-}
-
 const TOOL_ICONS: Record<string, React.ElementType> = {
   grep:          Search,
   read:          FileText,
@@ -70,6 +65,15 @@ const TOOL_LABELS: Record<string, (args: Record<string, unknown>) => string> = {
 function toolLabel(tool: string, args: Record<string, unknown>): string {
   const fn = TOOL_LABELS[tool]
   return fn ? fn(args) : `called ${tool}`
+}
+
+/** What the agent is doing right now, for the in-progress status line. */
+function statusLabel(msg: Message): string {
+  if (msg.content) return 'Responding…'
+  const activity = msg.toolActivity ?? []
+  if (activity.some((e) => e.summary === undefined)) return 'Running tools…'
+  if (activity.length > 0) return 'Thinking…'
+  return 'Thinking…'
 }
 
 function ToolActivity({ events }: { events: ToolEvent[] }) {
@@ -120,7 +124,6 @@ export default function Ask() {
   const [draft, setDraft] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [totalTickets, setTotalTickets] = useState<number | null>(null)
-  const [useAgent, setUseAgent] = useState(true)
 
   const messagesEnd = useRef<HTMLDivElement>(null)
   const textareaEl  = useRef<HTMLTextAreaElement>(null)
@@ -156,7 +159,7 @@ export default function Ask() {
       const next = prev.slice()
       const last = next[next.length - 1]
       const activity = [...(last.toolActivity ?? []), { id, tool, args }]
-      next[next.length - 1] = { ...last, toolActivity: activity, thinking: false }
+      next[next.length - 1] = { ...last, toolActivity: activity }
       return next
     })
   }
@@ -193,10 +196,8 @@ export default function Ask() {
     setIsLoading(true)
     scrollToBottom()
 
-    const endpoint = useAgent ? '/ask/api/agent-chat' : '/ask/api/chat'
-
     try {
-      const res = await fetch(endpoint, {
+      const res = await fetch('/ask/api/agent-chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ question: q, project: selectedProject, months: selectedMonths }),
@@ -228,7 +229,7 @@ export default function Ask() {
           try {
             const evt = JSON.parse(raw)
             // Classic endpoint
-            if (evt.text)  { content += evt.text; patchAssistant({ content, thinking: false }); scrollToBottom() }
+            if (evt.text)  { content += evt.text; patchAssistant({ content }); scrollToBottom() }
             if (evt.error) { patchAssistant({ content: `Error: ${evt.error}`, thinking: false }) }
             // Agentic endpoint
             if (evt.tool)      { appendToolCall(evt.id ?? evt.tool, evt.tool, evt.args ?? {}); scrollToBottom() }
@@ -280,17 +281,6 @@ export default function Ask() {
             </select>
           </div>
 
-          {/* Agent toggle */}
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-gray-500 dark:text-gray-400">Agentic mode</span>
-            <button
-              onClick={() => setUseAgent((v) => !v)}
-              className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${useAgent ? 'bg-indigo-500' : 'bg-gray-200 dark:bg-slate-600'}`}
-            >
-              <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white shadow transition-transform ${useAgent ? 'translate-x-4.5' : 'translate-x-0.5'}`} />
-            </button>
-          </div>
-
           {totalTickets !== null && (
             <div className="text-xs text-gray-500 flex items-center gap-1.5">
               <span className="inline-block w-1.5 h-1.5 rounded-full bg-green-400" />
@@ -340,20 +330,26 @@ export default function Ask() {
                     <div className="w-7 h-7 rounded-full bg-gray-100 dark:bg-slate-700 flex items-center justify-center flex-shrink-0 mt-0.5">
                       <Bot className="w-4 h-4 text-gray-500 dark:text-gray-400" />
                     </div>
-                    <div className="flex-1 min-w-0">
+                    <div className="flex-1 min-w-0 space-y-2">
                       {msg.toolActivity && msg.toolActivity.length > 0 && (
                         <ToolActivity events={msg.toolActivity} />
                       )}
-                      {msg.thinking && !msg.content ? (
-                        <div className="flex items-center gap-2 text-gray-400 pt-1.5">
-                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                          <span className="text-sm">Thinking…</span>
-                        </div>
-                      ) : msg.content ? (
+                      {msg.content && (
                         <div
-                          className="prose prose-sm dark:prose-invert max-w-none text-sm text-gray-800 dark:text-gray-200 leading-relaxed"
+                          className={markdownProseClass}
                           dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.content) }}
                         />
+                      )}
+                      {msg.thinking ? (
+                        <div className="flex items-center gap-2 text-gray-400 pt-0.5">
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          <span className="text-sm">{statusLabel(msg)}</span>
+                        </div>
+                      ) : msg.content ? (
+                        <div className="flex items-center gap-1.5 text-xs text-gray-300 dark:text-gray-600 pt-0.5">
+                          <Check className="w-3 h-3" />
+                          <span>Done</span>
+                        </div>
                       ) : null}
                     </div>
                   </div>
