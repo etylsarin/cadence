@@ -149,9 +149,9 @@ def main() -> int:
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     log_path = LOG_DIR / f"{utcnow().replace(':', '-')}.log"
 
-    # Append mode (O_APPEND): the in-process fetch stage re-stamps its own
-    # per-sync log and, when it lands in the same second, that is THIS file.
-    # Both writers appending at EOF interleave cleanly instead of clobbering.
+    # Append mode (O_APPEND): the fetch stage's log() lines are directed at this
+    # same file via log_path (below), and its print() output is tee'd here too.
+    # Both writers append at EOF, so the lines interleave cleanly in one log.
     with open(log_path, "a") as log_fh:
         tee = _Tee(log_fh)
         stages = (["fetch", "repair", "bronze→silver"] if run_fetch else []) + (
@@ -161,7 +161,11 @@ def main() -> int:
         tee.write(f"Stages: {', '.join(stages)}\n")
 
         if run_fetch:
-            _, code = run_stage("fetch", lambda: _gettickets.run(force=args.force), tee)
+            _, code = run_stage(
+                "fetch",
+                lambda: _gettickets.run(force=args.force, log_path=log_path),
+                tee,
+            )
             if code != 0:
                 tee.write(f"\nERROR: fetch exited {code} — aborting.\n")
                 return code

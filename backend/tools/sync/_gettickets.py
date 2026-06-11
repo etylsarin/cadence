@@ -381,7 +381,7 @@ def deletion_phase(discovered: list[tuple[str, str]]) -> list[str]:
             except Exception:
                 doc = None
         if doc is not None:
-            created = (doc.get("fields") or {}).get("created", "")[:10]
+            created = ((doc.get("fields") or {}).get("created") or "")[:10]
             if created and created < SYNC_START_DATE:
                 continue
 
@@ -418,16 +418,23 @@ def deletion_phase(discovered: list[tuple[str, str]]) -> list[str]:
 # ── Orchestration ─────────────────────────────────────────────────────────
 
 
-def run(force: bool = False, key: str | None = None) -> SyncResult:
+def run(
+    force: bool = False, key: str | None = None, log_path: Path | None = None
+) -> SyncResult:
     """Run a full sync (or a single-ticket fetch) and return a structured result.
 
     Importable entry point. Produces the same stdout/log output as the CLI.
-    NOW/LOG_FILE are (re)stamped here so repeated in-process calls each get
-    their own per-sync log file.
+    NOW is always (re)stamped here. By default LOG_FILE is a freshly stamped
+    per-sync file; pass `log_path` (as the in-process pipeline does) to append
+    the DISCOVER/SUMMARY log lines to that file instead — so they share the
+    pipeline's single log and router.py's parser sees the summary regardless of
+    second-boundary timing between the pipeline header and this re-stamp.
     """
     global NOW, LOG_FILE
     NOW = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    LOG_FILE = LOGS_DIR / f"{NOW.replace(':', '-')}.log"
+    LOG_FILE = (
+        log_path if log_path is not None else LOGS_DIR / f"{NOW.replace(':', '-')}.log"
+    )
 
     _require_config()
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
