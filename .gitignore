@@ -8,6 +8,7 @@
 __pycache__/
 *.pyc
 *.pyo
+.venv/
 
 # Frontend
 frontend/node_modules/

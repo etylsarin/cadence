@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { marked } from 'marked'
-import DOMPurify from 'dompurify'
 import { Sparkles } from 'lucide-react'
+import { renderMarkdown, markdownProseClass } from '@/lib/markdown'
 import HygieneSidebar from './HygieneSidebar'
 import FindingsTable from './RuleSection'
 import EmptyState from '@/components/EmptyState'
@@ -141,8 +140,8 @@ export default function Hygiene() {
               {planError && <div className="text-sm text-red-500 mb-3">{planError}</div>}
               {plan ? (
                 <div
-                  className="prose prose-sm dark:prose-invert max-w-none rounded-lg border border-gray-100 dark:border-slate-700 bg-gray-50/50 dark:bg-slate-800/50 px-5 py-4"
-                  dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(marked.parse(plan, { breaks: true }) as string) }}
+                  className={`${markdownProseClass} rounded-lg border border-gray-100 dark:border-slate-700 bg-gray-50/50 dark:bg-slate-800/50 px-5 py-4`}
+                  dangerouslySetInnerHTML={{ __html: renderMarkdown(plan) }}
                 />
               ) : !planError && (
                 <p className="text-xs text-gray-400 dark:text-gray-500">
