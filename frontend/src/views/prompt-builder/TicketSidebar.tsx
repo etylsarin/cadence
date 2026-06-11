@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Wand2, Search } from 'lucide-react'
 import AppSidebar from '@/components/AppSidebar'
+import AppCheckbox from '@/components/AppCheckbox'
 import SquadSelector from '@/components/SquadSelector'
 import { useProject } from '@/hooks/useProject'
 import { api } from '@/lib/api'
@@ -17,45 +18,55 @@ interface Props {
 
 export default function TicketSidebar({ activeKey, onSelect }: Props) {
   const { project, PROJECTS, set: setProject } = useProject()
-  const [search, setSearch]   = useState('')
-  const [needle, setNeedle]   = useState('')
-  const [tickets, setTickets] = useState<TicketStub[]>([])
-  const [total, setTotal]     = useState(0)
-  const [hasMore, setHasMore] = useState(false)
-  const [loading, setLoading] = useState(false)
+  const [squads, setSquads]       = useState<string[]>([])
+  const [squadFilter, setSquadFilter] = useState<string | null>(null)
+  const [showUnfinished, setShowUnfinished] = useState(true)
+  const [showFinished, setShowFinished]     = useState(false)
+  const [search, setSearch]       = useState('')
+  const [needle, setNeedle]       = useState('')
+  const [tickets, setTickets]     = useState<TicketStub[]>([])
+  const [total, setTotal]         = useState(0)
+  const [hasMore, setHasMore]     = useState(false)
+  const [loading, setLoading]     = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
-  const [error, setError]     = useState('')
+  const [error, setError]         = useState('')
 
-  // Debounce the search box → needle drives the fetch.
+  // Debounce search
   useEffect(() => {
     const t = setTimeout(() => setNeedle(search.trim()), 250)
     return () => clearTimeout(t)
   }, [search])
 
-  // (Re)load whenever project / search change.
+  // Load squads when project changes
+  useEffect(() => {
+    api<{ squads: string[] }>(`/prompt-builder/api/squads?project=${project}`)
+      .then((d) => setSquads(d.squads))
+      .catch(() => setSquads([]))
+    setSquadFilter(null)
+  }, [project])
+
+  // (Re)load tickets whenever project / squad / search / filters change
   useEffect(() => {
     let cancelled = false
     setLoading(true); setTickets([]); setError('')
-    api<TicketsResponse>(
-      `/prompt-builder/api/tickets?project=${project}&search=${encodeURIComponent(needle)}&limit=${PAGE}&offset=0`,
-    )
+    const qs = new URLSearchParams({ project, search: needle, limit: String(PAGE), offset: '0', unfinished: String(showUnfinished), finished: String(showFinished) })
+    if (squadFilter) qs.set('squad', squadFilter)
+    api<TicketsResponse>(`/prompt-builder/api/tickets?${qs}`)
       .then((data) => {
         if (cancelled) return
-        setTickets(data.items)
-        setTotal(data.total)
-        setHasMore(data.hasMore)
+        setTickets(data.items); setTotal(data.total); setHasMore(data.hasMore)
       })
       .catch((e) => { if (!cancelled) setError((e as Error).message) })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [project, needle])
+  }, [project, squadFilter, needle, showUnfinished, showFinished])
 
   async function loadMore() {
     setLoadingMore(true)
     try {
-      const data = await api<TicketsResponse>(
-        `/prompt-builder/api/tickets?project=${project}&search=${encodeURIComponent(needle)}&limit=${PAGE}&offset=${tickets.length}`,
-      )
+      const qs = new URLSearchParams({ project, search: needle, limit: String(PAGE), offset: String(tickets.length), unfinished: String(showUnfinished), finished: String(showFinished) })
+      if (squadFilter) qs.set('squad', squadFilter)
+      const data = await api<TicketsResponse>(`/prompt-builder/api/tickets?${qs}`)
       setTickets((prev) => [...prev, ...data.items])
       setHasMore(data.hasMore)
     } catch (e) {
@@ -74,9 +85,45 @@ export default function TicketSidebar({ activeKey, onSelect }: Props) {
     <AppSidebar
       title="Prompt Builder"
       icon={Wand2}
-      header={<SquadSelector value={project} squads={PROJECTS} onChange={onProjectChange} />}
+      header={
+        <div>
+          <SquadSelector value={project} squads={PROJECTS} onChange={onProjectChange} />
+
+          {squads.length > 0 && (
+            <div className="mt-3 mb-1">
+              <div className="text-[10px] text-gray-400 dark:text-gray-500 uppercase tracking-wide mb-1">Squad</div>
+              <div className="flex flex-wrap gap-1">
+                <button
+                  className={`px-1.5 py-0.5 rounded text-[11px] font-semibold transition-all ${
+                    squadFilter === null
+                      ? 'bg-gray-800 dark:bg-slate-500 text-white'
+                      : 'text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200'
+                  }`}
+                  onClick={() => setSquadFilter(null)}
+                >All</button>
+                {squads.map((s) => (
+                  <button
+                    key={s}
+                    className={`px-1.5 py-0.5 rounded text-[11px] font-semibold transition-all ${
+                      squadFilter === s
+                        ? 'bg-gray-800 dark:bg-slate-500 text-white'
+                        : 'text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200'
+                    }`}
+                    onClick={() => setSquadFilter(s)}
+                  >{s}</button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      }
     >
-      <div className="px-4 py-2">
+      <div className="flex gap-3 px-4 py-2 text-xs text-gray-500 dark:text-gray-400">
+        <AppCheckbox checked={showUnfinished} onChange={setShowUnfinished}>Unfinished</AppCheckbox>
+        <AppCheckbox checked={showFinished} onChange={setShowFinished}>Finished</AppCheckbox>
+      </div>
+
+      <div className="px-4 pb-2">
         <div className="relative">
           <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-300 dark:text-gray-600" />
           <input

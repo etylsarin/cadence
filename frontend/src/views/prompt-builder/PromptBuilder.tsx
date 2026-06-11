@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom'
 import TicketSidebar from './TicketSidebar'
 import PromptPanel from './PromptPanel'
 import EmptyState from '@/components/EmptyState'
+import TagBadge from '@/components/TagBadge'
 import { api } from '@/lib/api'
 import type { TicketStub, TicketDetail } from './types'
 
@@ -26,13 +27,12 @@ export default function PromptBuilder() {
 
   function onSelect(ticket: TicketStub | null) {
     if (!ticket) { setActiveKey(null); setDetail(null); return }
-    if (ticket.key === activeKey && detail) return // already loaded
+    if (ticket.key === activeKey && detail) return
     setActiveKey(ticket.key)
     setSearchParams({ ticket: ticket.key }, { replace: true })
     void load(ticket.key)
   }
 
-  // Direct URL load with ?ticket=KEY — fetch immediately without waiting for the sidebar.
   const didInitialLoad = useRef(false)
   useEffect(() => {
     if (didInitialLoad.current) return
@@ -50,10 +50,10 @@ export default function PromptBuilder() {
         {!activeKey ? (
           <EmptyState message="Select a ticket to build a prompt from it" />
         ) : (
-          <div className="px-8 py-7 max-w-5xl">
+          <div className="px-8 py-7 max-w-4xl">
             {/* Header */}
             <div className="mb-6">
-              <div className="flex items-center gap-3 mb-2">
+              <div className="flex items-center gap-3 mb-3">
                 <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">
                   {activeKey}{detail ? ` — ${detail.summary}` : ''}
                 </h2>
@@ -62,79 +62,83 @@ export default function PromptBuilder() {
                     href={`${detail.jiraUrl}/browse/${detail.key}`}
                     target="_blank"
                     rel="noreferrer"
-                    className="text-xs text-gray-400 dark:text-gray-500 hover:text-gray-900 dark:hover:text-gray-100 transition-colors"
+                    className="text-xs text-gray-400 dark:text-gray-500 hover:text-gray-900 dark:hover:text-gray-100 transition-colors shrink-0"
                   >Jira ↗</a>
                 )}
               </div>
 
-              <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-xs">
-                {detail ? (
-                  <>
-                    <Meta label="Type" value={detail.type} />
-                    <Meta label="Status" value={detail.status} />
-                    <Meta label="Priority" value={detail.priority} />
-                    <Meta label="Created" value={detail.created} />
-                    <Meta label="Updated" value={detail.updated} />
-                  </>
-                ) : loading ? (
-                  <span className="text-gray-400 dark:text-gray-500 text-[10px]">Loading…</span>
-                ) : null}
-              </div>
-              {error && <p className="mt-2 text-sm text-red-500">{error}</p>}
+              {loading && <p className="text-xs text-gray-400">Loading…</p>}
+              {error && <p className="text-sm text-red-500">{error}</p>}
+
+              {detail && (
+                <div className="flex flex-wrap gap-x-6 gap-y-2 text-xs">
+                  {/* Badge row */}
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {detail.type && <TagBadge kind="type" value={detail.type} />}
+                    {detail.priority && detail.priority !== 'None' && <TagBadge kind="priority" value={detail.priority} />}
+                    {detail.status && <TagBadge kind="status" value={detail.status} />}
+                    {detail.project && <TagBadge kind="project" value={detail.project} />}
+                  </div>
+                  {/* Date row */}
+                  <div className="flex items-center gap-4 text-gray-500 dark:text-gray-400">
+                    {detail.created && <span><span className="text-[10px] text-gray-400 mr-1">Created</span>{detail.created}</span>}
+                    {detail.updated && <span><span className="text-[10px] text-gray-400 mr-1">Updated</span>{detail.updated}</span>}
+                  </div>
+                </div>
+              )}
             </div>
 
             {detail && (
               <>
                 {/* Context preview */}
-                <div className="mb-8 flex flex-col gap-4">
-                  <Section title="Description">
+                <div className="mb-8 rounded-xl border border-gray-100 dark:border-slate-700 divide-y divide-gray-100 dark:divide-slate-700 bg-white dark:bg-slate-900">
+                  {/* Description */}
+                  <ContextRow title="Description" empty={!detail.description}>
                     <p className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap">
                       {detail.description || '—'}
                     </p>
-                  </Section>
+                  </ContextRow>
 
-                  <Section title="Epic">
-                    {detail.epic ? (
-                      <p className="text-sm text-gray-700 dark:text-gray-300">
-                        <span className="font-medium">{detail.epic.key}</span>
-                        {detail.epic.summary && <span className="ml-1.5">{detail.epic.summary}</span>}
-                      </p>
-                    ) : (
-                      <p className="text-sm text-gray-400 dark:text-gray-500">No epic</p>
-                    )}
-                  </Section>
+                  {/* Epic */}
+                  {detail.epic && (
+                    <ContextRow title="Epic">
+                      <span className="font-medium text-sm text-gray-900 dark:text-gray-100">{detail.epic.key}</span>
+                      {detail.epic.summary && <span className="ml-2 text-sm text-gray-600 dark:text-gray-400">{detail.epic.summary}</span>}
+                      {detail.epic.description && (
+                        <p className="mt-1.5 text-xs text-gray-500 dark:text-gray-400 leading-relaxed whitespace-pre-wrap line-clamp-3">{detail.epic.description}</p>
+                      )}
+                    </ContextRow>
+                  )}
 
-                  <Section title={`Linked issues (${detail.links.length})`}>
-                    {detail.links.length ? (
-                      <ul className="text-sm text-gray-700 dark:text-gray-300 flex flex-col gap-1">
+                  {/* Linked issues */}
+                  {detail.links.length > 0 && (
+                    <ContextRow title={`Linked issues (${detail.links.length})`}>
+                      <div className="flex flex-col gap-1">
                         {detail.links.map((l, i) => (
-                          <li key={i}>
-                            <span className="text-gray-400 dark:text-gray-500">{l.relation}</span>
-                            <span className="font-medium ml-1.5">{l.key}</span>
-                            {l.summary && <span className="ml-1.5">{l.summary}</span>}
-                            {l.status && <span className="ml-1.5 text-[10px] bg-gray-100 dark:bg-slate-700 text-gray-500 dark:text-gray-400 px-1.5 py-0.5 rounded-full">{l.status}</span>}
-                          </li>
+                          <div key={i} className="flex items-center gap-2 text-sm">
+                            <span className="text-[10px] text-gray-400 dark:text-gray-500 shrink-0">{l.relation}</span>
+                            <span className="font-medium text-gray-900 dark:text-gray-100">{l.key}</span>
+                            {l.summary && <span className="text-gray-600 dark:text-gray-400 truncate">{l.summary}</span>}
+                            {l.status && <span className="shrink-0 text-[10px] bg-gray-100 dark:bg-slate-700 text-gray-500 dark:text-gray-400 px-1.5 py-0.5 rounded-full">{l.status}</span>}
+                          </div>
                         ))}
-                      </ul>
-                    ) : (
-                      <p className="text-sm text-gray-400 dark:text-gray-500">No linked issues</p>
-                    )}
-                  </Section>
+                      </div>
+                    </ContextRow>
+                  )}
 
-                  <Section title={`Attachments (${detail.attachments.length})`}>
-                    {detail.attachments.length ? (
-                      <ul className="text-sm text-gray-700 dark:text-gray-300 flex flex-col gap-1">
+                  {/* Attachments */}
+                  {detail.attachments.length > 0 && (
+                    <ContextRow title={`Attachments (${detail.attachments.length})`}>
+                      <div className="flex flex-col gap-0.5">
                         {detail.attachments.map((a, i) => (
-                          <li key={i}>
-                            {a.filename}
-                            <span className="ml-1.5 text-[10px] text-gray-400 dark:text-gray-500">{[a.mimeType, a.created].filter(Boolean).join(' · ')}</span>
-                          </li>
+                          <div key={i} className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                            <span className="font-medium">{a.filename}</span>
+                            <span className="text-[10px] text-gray-400 dark:text-gray-500">{[a.mimeType, a.created].filter(Boolean).join(' · ')}</span>
+                          </div>
                         ))}
-                      </ul>
-                    ) : (
-                      <p className="text-sm text-gray-400 dark:text-gray-500">No attachments</p>
-                    )}
-                  </Section>
+                      </div>
+                    </ContextRow>
+                  )}
                 </div>
 
                 {/* Generate */}
@@ -151,23 +155,11 @@ export default function PromptBuilder() {
   )
 }
 
-function Meta({ label, value }: { label: string; value?: string }) {
-  if (!value) return null
+function ContextRow({ title, empty, children }: { title: string; empty?: boolean; children: React.ReactNode }) {
   return (
-    <span>
-      <span className="text-[10px] text-gray-400 dark:text-gray-500 mr-1">{label}</span>
-      <span className="text-gray-700 dark:text-gray-300">{value}</span>
-    </span>
-  )
-}
-
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div className="rounded-xl border border-gray-100 dark:border-slate-700 bg-white dark:bg-slate-900">
-      <div className="px-4 py-3 border-b border-gray-100 dark:border-slate-700">
-        <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">{title}</h3>
-      </div>
-      <div className="px-4 py-3">{children}</div>
+    <div className="px-4 py-3">
+      <div className="text-[10px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide mb-1.5">{title}</div>
+      <div className={empty ? 'text-sm text-gray-300 dark:text-gray-600' : ''}>{empty ? '—' : children}</div>
     </div>
   )
 }

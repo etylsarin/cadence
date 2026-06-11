@@ -179,12 +179,22 @@ _EXCLUDED_EPIC_STATUSES = {
 
 def _child_payload(t: dict, epic_key: str) -> dict:
     f = t.get("fields") or {}
+    blocks: list[str] = []
+    blocked_by: list[str] = []
+    for link in (f.get("issuelinks") or []):
+        lt = link.get("type") or {}
+        if lt.get("outward", "").lower() == "blocks" and "outwardIssue" in link:
+            blocks.append(link["outwardIssue"]["key"])
+        if lt.get("inward", "").lower() == "is blocked by" and "inwardIssue" in link:
+            blocked_by.append(link["inwardIssue"]["key"])
     return {
-        "key":     t.get("key", ""),
-        "summary": f.get("summary", "") or "",
-        "type":    ((f.get("issuetype") or {}).get("name", "") or ""),
-        "status":  ((f.get("status") or {}).get("name", "") or ""),
-        "parent":  epic_key,
+        "key":        t.get("key", ""),
+        "summary":    f.get("summary", "") or "",
+        "type":       ((f.get("issuetype") or {}).get("name", "") or ""),
+        "status":     ((f.get("status") or {}).get("name", "") or ""),
+        "parent":     epic_key,
+        "blocks":     blocks,
+        "blocked_by": blocked_by,
     }
 
 
@@ -195,12 +205,13 @@ def api_epics(
 ):
     """Recent *open* epics for a project from the synced mirror,
     newest-updated first, with per-status child counts for the picker."""
-    validate_project(project)
+    if project != "ALL":
+        validate_project(project)
     m = get_mirror()
     epics: list[dict] = []
     for key, t in m.epics.items():
         f = t.get("fields") or {}
-        if ((f.get("project") or {}).get("key", "")) != project:
+        if project != "ALL" and ((f.get("project") or {}).get("key", "")) != project:
             continue
         status = ((f.get("status") or {}).get("name", "") or "")
         if status in _EXCLUDED_EPIC_STATUSES:
@@ -211,6 +222,7 @@ def api_epics(
             cs = ((c.get("fields") or {}).get("status") or {}).get("name", "")
             if cs:
                 by_status[cs] += 1
+        proj_key = (f.get("project") or {}).get("key", "") or key.split("-")[0]
         epics.append({
             "key":      key,
             "summary":  f.get("summary", "") or "",
@@ -218,6 +230,7 @@ def api_epics(
             "priority": ((f.get("priority") or {}).get("name", "") or ""),
             "updated":  (f.get("updated") or "")[:10],
             "created":  (f.get("created") or "")[:10],
+            "project":  proj_key,
             "child_count":         len(children),
             "child_status_counts": dict(by_status),
         })
@@ -290,3 +303,30 @@ def api_epic_children(req: EpicChildrenRequest):
         "all_statuses": [{"name": s, "count": c} for s, c in sorted(all_statuses.items(), key=lambda kv: -kv[1])],
         "jira_url":     JIRA_URL,
     }
+
+
+@router.get("/api/ticket-epics")
+def api_ticket_epics(keys: List[str] = Query(...)):
+    """Given a list of ticket keys, return their parent epic key (if known).
+
+    Used by the frontend to detect missing cross-epic blocking dependencies
+    when the user adds an epic to the plan.
+    """
+    if not keys:
+        return {}
+    key_set = set(keys)
+    m = get_mirror()
+    result: dict[str, str] = {}
+    EPIC_LINK_FIELD = "customfield_10008"
+    for t in m.tickets:
+        k = t.get("key", "")
+        if k not in key_set:
+            continue
+        f = t.get("fields") or {}
+        parent_key = (
+            ((f.get("parent") or {}).get("key", ""))
+            or (f.get(EPIC_LINK_FIELD, "") or "")
+        )
+        if parent_key:
+            result[k] = parent_key
+    return result

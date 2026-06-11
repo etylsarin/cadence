@@ -2,7 +2,7 @@ import {
   forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState,
   type KeyboardEvent,
 } from 'react'
-import { ExternalLink, Search, ChevronDown, ChevronRight, ChevronUp, Loader2, X } from 'lucide-react'
+import { ExternalLink, Search, ChevronDown, ChevronRight, ChevronUp, Loader2 } from 'lucide-react'
 import AppInfoPanel from '@/components/AppInfoPanel'
 import { getTagProps } from '@/lib/tags'
 import { PRIORITY_LEVELS, normalizePriority } from './simulate'
@@ -10,16 +10,12 @@ import type { RecentEpic, SelectedEpic, EpicOverride, EpicEditPayload } from './
 
 type SortKey = 'selected' | 'priority' | 'key' | 'title' | 'todo' | 'status' | 'created' | 'updated'
 
-export interface PlannerScopeHandle {
-  /** Re-sort by Key desc so a freshly-added custom row (CUST-N) lands on top. */
-  resetSortForNew: () => void
-}
+// eslint-disable-next-line @typescript-eslint/no-empty-interface
+export interface PlannerScopeHandle {}
 
 interface Props {
   squad: string
   recentEpicsByProject: Record<string, RecentEpic[]>
-  customEpics?: RecentEpic[]
-  nextCustomKey?: string
   loadingEpicsFor?: string | null
   selectedEpics: SelectedEpic[]
   epicOverrides?: Record<string, EpicOverride>
@@ -28,9 +24,14 @@ interface Props {
   jiraUrl?: string
   onToggleEpic: (project: string, epic: RecentEpic) => void
   onToggleStatus: (name: string) => void
-  onAddCustomEpic: (payload: { name: string; items: number; priority: string }) => void
-  onRemoveCustomEpic: (key: string) => void
   onUpdateEpic: (payload: EpicEditPayload) => void
+}
+
+const MONTH_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+function shortDateStr(s: string | undefined): string {
+  if (!s) return '—'
+  const m = parseInt(s.slice(5, 7), 10)
+  return `${MONTH_SHORT[m - 1] ?? s.slice(5, 7)} '${s.slice(2, 4)}`
 }
 
 const OVR_BG = 'bg-yellow-50 dark:bg-yellow-900/30 text-yellow-900 dark:text-yellow-200'
@@ -45,26 +46,14 @@ function priorityCls(level: string): string {
 
 const PlannerScope = forwardRef<PlannerScopeHandle, Props>(function PlannerScope(
   {
-    squad, recentEpicsByProject, customEpics = [], nextCustomKey = '', loadingEpicsFor = null,
+    squad, recentEpicsByProject, loadingEpicsFor = null,
     selectedEpics, epicOverrides = {}, statusInScope, jiraUrl = '',
-    onToggleEpic, onToggleStatus, onAddCustomEpic, onRemoveCustomEpic, onUpdateEpic,
+    onToggleEpic, onToggleStatus, onUpdateEpic,
   },
   ref,
 ) {
   const [search, setSearch] = useState('')
   const [statusOpen, setStatusOpen] = useState(false)
-
-  // Persistent "add custom epic" sub-header row state.
-  const [customName, setCustomName] = useState('')
-  const [customItems, setCustomItems] = useState(10)
-  const [customPriority, setCustomPriority] = useState('Medium')
-
-  function submitCustom() {
-    const items = Math.max(0, Math.round(Number(customItems || 0)))
-    if (!customName.trim() || items <= 0) return
-    onAddCustomEpic({ name: customName.trim(), items, priority: customPriority })
-    setCustomName(''); setCustomItems(10); setCustomPriority('Medium')
-  }
 
   // Client-side column sorting (default: most-recently-updated first).
   const [sortKey, setSortKey] = useState<SortKey>('updated')
@@ -80,9 +69,7 @@ const PlannerScope = forwardRef<PlannerScopeHandle, Props>(function PlannerScope
     }
   }
 
-  useImperativeHandle(ref, () => ({
-    resetSortForNew: () => { setSortKey('key'); setSortDir('desc') },
-  }), [])
+  useImperativeHandle(ref, () => ({}), [])
 
   // ── Selection helpers ───────────────────────────────────────────────────────
   const isSelected = useCallback((key: string) => selectedEpics.some((e) => e.key === key), [selectedEpics])
@@ -92,10 +79,12 @@ const PlannerScope = forwardRef<PlannerScopeHandle, Props>(function PlannerScope
     return e ? e.priorityLevel || 'Medium' : null
   }, [selectedEpics])
 
-  const selectedForSquad = useMemo(() => selectedEpics.filter((e) => e.project === squad), [selectedEpics, squad])
+  const selectedForSquad = useMemo(
+    () => squad === 'ALL' ? selectedEpics : selectedEpics.filter((e) => e.project === squad),
+    [selectedEpics, squad],
+  )
 
   function countInScope(epic: SelectedEpic): number {
-    if (epic.custom) return Math.max(0, Number(epic.customItems || 0))
     if (!epic.children) return 0
     return epic.children.filter((c) => statusInScope[c.status]).length
   }
@@ -114,12 +103,10 @@ const PlannerScope = forwardRef<PlannerScopeHandle, Props>(function PlannerScope
 
   const includedItems = summary.items
 
-  /** Items "in scope" for one epic in the table (override map wins, then custom,
-   *  then the filter-derived count from child_status_counts). */
+  /** Items "in scope" for one epic in the table (override map wins, then filter-derived count). */
   const inScopeForEpic = useCallback((ep: RecentEpic): number => {
     const ovr = epicOverrides[ep.key]
     if (ovr?.overrideItems != null) return Math.max(0, Number(ovr.overrideItems))
-    if (ep.custom) return Math.max(0, Number(ep.customItems || 0))
     const breakdown = ep.child_status_counts
     if (!breakdown) return ep.child_count || 0
     let n = 0
@@ -129,7 +116,6 @@ const PlannerScope = forwardRef<PlannerScopeHandle, Props>(function PlannerScope
 
   /** Jira-derived count, ignoring the override map (for honest yellow chips). */
   const baselineItems = useCallback((ep: RecentEpic): number => {
-    if (ep.custom) return Math.max(0, Number(ep.customItems || 0))
     const breakdown = ep.child_status_counts
     if (!breakdown) return ep.child_count || 0
     let n = 0
@@ -148,10 +134,9 @@ const PlannerScope = forwardRef<PlannerScopeHandle, Props>(function PlannerScope
   }, [epicOverrides])
 
   // "Not synced to Jira" highlighters.
-  const titleOverridden = (ep: RecentEpic) => ep.custom || (!!epicOverrides[ep.key]?.overrideTitle && epicOverrides[ep.key]!.overrideTitle !== (ep.summary || ''))
-  const itemsOverridden = (ep: RecentEpic) => ep.custom || epicOverrides[ep.key]?.overrideItems != null
+  const titleOverridden = (ep: RecentEpic) => !!epicOverrides[ep.key]?.overrideTitle && epicOverrides[ep.key]!.overrideTitle !== (ep.summary || '')
+  const itemsOverridden = (ep: RecentEpic) => epicOverrides[ep.key]?.overrideItems != null
   const priorityOverridden = (ep: RecentEpic) => {
-    if (ep.custom) return true
     const ovr = epicOverrides[ep.key]
     if (!ovr?.priorityLevel) return false
     return ovr.priorityLevel !== (ep.priority ? normalizePriority(ep.priority) : null)
@@ -180,23 +165,23 @@ const PlannerScope = forwardRef<PlannerScopeHandle, Props>(function PlannerScope
     !search || `${ep.key} ${ep.summary}`.toLowerCase().includes(search.toLowerCase()), [search])
 
   const epicList = useMemo(() => {
+    const source = squad === 'ALL'
+      ? Object.values(recentEpicsByProject).flat()
+      : recentEpicsByProject[squad] || []
     const out: RecentEpic[] = []
-    for (const ep of recentEpicsByProject[squad] || []) {
+    for (const ep of source) {
       if ((ep.child_count || 0) === 0) continue   // always hide empty epics
       if (!matchesSearch(ep)) continue
       out.push(ep)
     }
-    for (const ep of customEpics) if (matchesSearch(ep)) out.push(ep)
     const dir = sortDir === 'asc' ? 1 : -1
     out.sort((a, b) => {
-      // Key sort: pin customs to the "high" end (locale-proof; see Vue original).
-      if (sortKey === 'key' && !!a.custom !== !!b.custom) return (a.custom ? 1 : -1) * dir
       const va = sortValue(a), vb = sortValue(b)
       const cmp = typeof va === 'number' && typeof vb === 'number' ? va - vb : String(va).localeCompare(String(vb), undefined, { numeric: true })
       return cmp * dir
     })
     return out
-  }, [recentEpicsByProject, squad, customEpics, matchesSearch, sortKey, sortDir, sortValue])
+  }, [recentEpicsByProject, squad, matchesSearch, sortKey, sortDir, sortValue])
 
   // ── Scroll-bottom hint for the epic list ───────────────────────────────────
   const epicListRef = useRef<HTMLDivElement>(null)
@@ -213,7 +198,6 @@ const PlannerScope = forwardRef<PlannerScopeHandle, Props>(function PlannerScope
   function commitField(ep: RecentEpic, field: 'title' | 'items' | 'priority', value: string | number) {
     onUpdateEpic({
       key: ep.key,
-      custom: !!ep.custom,
       fields: { [field]: value },
       baseline: { title: ep.summary || '', items: baselineItems(ep) },
     })
@@ -239,11 +223,11 @@ const PlannerScope = forwardRef<PlannerScopeHandle, Props>(function PlannerScope
         <div>
           <div className="font-semibold text-gray-800 dark:text-gray-200 mb-1">How it works</div>
           <ul className="space-y-1 list-disc list-inside">
-            <li>The scope is built from <span className="font-medium">epics owned by the squad you picked in the sidebar</span>, pulled live from Jira. Epics whose <span className="font-medium">own status</span> is Done / Closed / Rejected / Delivered are excluded — they're already finished, no point planning them.</li>
+            <li>The scope is built from <span className="font-medium">epics owned by the squad you picked in the sidebar</span>, pulled from the synced mirror. Epics whose <span className="font-medium">own status</span> is Done / Closed / Rejected / Delivered are excluded — they're already finished.</li>
             <li><span className="font-medium">Filter by key or summary</span> narrows the list. <span className="font-medium">Empty epics</span> (no child issues) are always hidden.</li>
             <li><span className="font-medium">Click a row</span> (or its colour square on the left) to add the epic to the planner. The square fills with the epic's Timeline colour once it's in.</li>
-            <li>The <span className="font-medium">Priority</span> column shows each epic's Jira priority. Selected epics get a dropdown to override it for planning — this is what the Descope tweak (below the Timeline) uses to decide which epics to drop.</li>
-            <li>The pinned <span className="font-medium">first row</span> creates <span className="font-medium">custom epics</span> for work that isn't in Jira yet — type a name, item count, and priority, then click <em>Add</em>. The key is auto-assigned (CUST-N) and they behave like real epics on the Timeline; the <span className="font-medium">×</span> on a custom row deletes it.</li>
+            <li>The <span className="font-medium">Priority</span> column shows each epic's Jira priority. Selected epics get a dropdown to override it for planning.</li>
+            <li><span className="font-medium">Auto-ordering</span>: when epics are added, the planner reads ticket-level blocking links across epics. If a ticket in Epic A blocks a ticket in Epic B, A is placed before B in the same Timeline lane (sequential). Epics with no blocking relationship to each other land in separate lanes (parallel). You can always drag bars to override the automatic placement.</li>
             <li>The <span className="font-medium">"What counts as to do"</span> chip group decides which Jira statuses count toward the <span className="font-medium">To do</span> column — these are statuses on the <span className="font-medium">child issues</span> inside each epic, not the epic's own status. The number next to each chip is items in the current selection sitting in that status.</li>
             <li>The summary line below the table is what the Timeline will use: <span className="font-medium">N items in scope · M epics</span>.</li>
           </ul>
@@ -292,103 +276,67 @@ const PlannerScope = forwardRef<PlannerScopeHandle, Props>(function PlannerScope
         {/* Epic list */}
         <div className="mt-3">
           <div className="relative">
-            <div ref={epicListRef} onScroll={refreshHint} className="max-h-[210px] overflow-y-auto sidebar-scroll">
+            <div ref={epicListRef} onScroll={refreshHint} className="max-h-[320px] overflow-y-auto sidebar-scroll">
               <table className="w-full text-sm">
                 <thead className="sticky top-0 z-10 bg-white dark:bg-slate-900 shadow-[inset_0_-1px_0_0_rgb(229_231_235_/_1)] dark:shadow-[inset_0_-1px_0_0_rgb(51_65_85_/_1)]">
                   <tr className="text-[10px] uppercase tracking-wide text-gray-400 select-none">
-                    <th className="text-left py-1.5 pr-2 font-medium whitespace-nowrap">
+                    <th className="text-left pr-2 font-medium whitespace-nowrap">
                       <button type="button" className="inline-flex items-center gap-0.5 hover:text-gray-600 dark:hover:text-gray-200" title="Sort by selection (in-planner first)" onClick={() => setSort('selected')}>
                         Epics <span className="text-gray-400 tabular-nums">({epicList.length})</span>
                         <span className="inline-flex w-3 justify-center">{sortKey === 'selected' && (sortDir === 'asc' ? <ChevronUp size={11} /> : <ChevronDown size={11} />)}</span>
                       </button>
                     </th>
-                    <th className="text-left py-1.5 pr-2 font-medium">{sortBtn('key', 'Key')}</th>
-                    <th className="text-left py-1.5 pr-2 font-medium">{sortBtn('title', 'Title')}</th>
-                    <th className="text-right py-1.5 pr-2 font-medium">{sortBtn('todo', 'To do')}</th>
-                    <th className="text-left py-1.5 pr-2 font-medium whitespace-nowrap">{sortBtn('priority', 'Priority', 'Sort by priority (Critical first)')}</th>
-                    <th className="text-left py-1.5 pr-2 font-medium">{sortBtn('status', 'Epic status')}</th>
-                    <th className="text-right py-1.5 pr-2 font-medium">{sortBtn('created', 'Created')}</th>
-                    <th className="text-right py-1.5 pr-2 font-medium">{sortBtn('updated', 'Updated')}</th>
-                    <th className="py-1.5 w-full" />
+                    <th className="text-left pr-2 font-medium">{sortBtn('key', 'Key')}</th>
+                    <th className="text-left pr-2 font-medium">{sortBtn('title', 'Title')}</th>
+                    <th className="text-right pr-2 font-medium">{sortBtn('todo', 'To do')}</th>
+                    <th className="text-left pr-2 font-medium whitespace-nowrap">{sortBtn('priority', 'Priority', 'Sort by priority (Critical first)')}</th>
+                    <th className="text-left pr-2 font-medium">{sortBtn('status', 'Epic status')}</th>
+                    <th className="text-right pr-2 font-medium">{sortBtn('updated', 'Updated')}</th>
+                    <th className="w-full" />
                   </tr>
 
-                  {/* Always-visible "add custom epic" sub-header row */}
-                  <tr className="border-t border-gray-100 dark:border-slate-800 bg-gray-50/70 dark:bg-slate-800/40 align-middle">
-                    <td className="py-1.5 pr-2" />
-                    <td className="py-1.5 pr-2"><span className="font-mono text-[11px] text-gray-400 dark:text-gray-500">{nextCustomKey}</span></td>
-                    <td className="py-1.5 pr-2 min-w-[360px]">
-                      <input
-                        value={customName}
-                        onChange={(e) => setCustomName(e.target.value)}
-                        onKeyUp={(e) => { if (e.key === 'Enter') submitCustom() }}
-                        type="text" placeholder="Add custom epic…"
-                        className={`w-full max-w-[360px] text-[11px] text-gray-700 dark:text-gray-300 placeholder-gray-400 dark:placeholder-gray-500 ${cellInputCls}`}
-                      />
-                    </td>
-                    <td className="py-1.5 pr-[22px] text-right tabular-nums">
-                      <input
-                        value={customItems}
-                        onChange={(e) => setCustomItems(Number(e.target.value))}
-                        onKeyUp={(e) => { if (e.key === 'Enter') submitCustom() }}
-                        type="number" min={1} step={1} title="Number of items"
-                        className={`${numInputCls} text-gray-800 dark:text-gray-100 ${cellInputCls}`}
-                      />
-                    </td>
-                    <td className="py-1.5 pr-2">
-                      <select
-                        value={customPriority}
-                        onChange={(e) => setCustomPriority(e.target.value)}
-                        title="Priority"
-                        className={`text-[10px] font-medium pl-1 pr-0.5 py-0.5 border-0 rounded focus:outline-none focus:ring-1 focus:ring-blue-400 cursor-pointer appearance-none ${priorityCls(customPriority)}`}
-                      >
-                        {PRIORITY_LEVELS.map((lvl) => <option key={lvl} value={lvl}>{lvl}</option>)}
-                      </select>
-                    </td>
-                    <td className="py-1.5 pr-2" /><td className="py-1.5 pr-2" /><td className="py-1.5 pr-2" />
-                    <td className="py-1.5">
-                      <button
-                        type="button" onClick={submitCustom}
-                        disabled={!customName.trim() || customItems <= 0}
-                        className="px-2 py-1 rounded bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-semibold disabled:opacity-40 disabled:cursor-not-allowed"
-                      >Add</button>
-                    </td>
-                  </tr>
                 </thead>
                 <tbody>
                   {loadingEpicsFor === squad && !epicList.length ? (
-                    <tr><td colSpan={9} className="py-3 text-xs text-gray-400"><span className="inline-flex items-center gap-2"><Loader2 size={13} className="animate-spin" /> Loading epics…</span></td></tr>
+                    <tr><td colSpan={8} className="py-3 text-xs text-gray-400"><span className="inline-flex items-center gap-2"><Loader2 size={13} className="animate-spin" /> Loading epics…</span></td></tr>
                   ) : !epicList.length ? (
-                    <tr><td colSpan={9} className="py-3 text-xs text-gray-400">No epics match the current filters.</td></tr>
+                    <tr><td colSpan={8} className="py-3 text-xs text-gray-400">No epics match the current filters.</td></tr>
                   ) : (
                     epicList.map((ep) => {
                       const selected = isSelected(ep.key)
                       const effPriority = effectivePriority(ep)
                       const inScope = inScopeForEpic(ep)
+                      const laneIdx = selected ? (selectedEpics.find((e) => e.key === ep.key)?.laneIndex ?? null) : null
+                      const lanemates = laneIdx !== null ? selectedEpics.filter((e) => (squad === 'ALL' || e.project === squad) && e.laneIndex === laneIdx) : []
+                      const inSeries = lanemates.length > 1
                       return (
                         <tr key={ep.key} data-epic-key={ep.key} className="border-t border-gray-100 dark:border-slate-800 hover:bg-gray-50 dark:hover:bg-slate-800/40">
-                          <td className="py-1.5 pr-2 align-middle cursor-pointer" onClick={() => onToggleEpic(squad, ep)}>
-                            <div className="flex items-center justify-center">
+                          <td className="pr-2 align-middle cursor-pointer" onClick={() => onToggleEpic(ep.project || squad, ep)}>
+                            <div className="flex items-center justify-center gap-0.5">
                               <span
                                 className={`w-3.5 h-3.5 rounded-sm shrink-0 border transition-colors ${selected ? 'border-transparent' : 'bg-gray-200 dark:bg-slate-600 border-gray-300 dark:border-slate-500'}`}
                                 style={selected ? { background: selectedColor(ep.key) || '#64748b' } : undefined}
                                 title={selected ? 'In planner (Timeline colour)' : 'Add to planner'}
                               />
+                              {inSeries && (
+                                <span className="text-[8px] font-mono text-indigo-500 dark:text-indigo-400 leading-none" title={`Lane ${(laneIdx ?? 0) + 1} — runs in series with ${lanemates.filter(e => e.key !== ep.key).map(e => e.key).join(', ')}`}>→</span>
+                              )}
                             </div>
                           </td>
-                          <td className="py-1.5 pr-2 align-middle whitespace-nowrap cursor-pointer" title={selected ? 'Click to remove from planner' : 'Click to add to planner'} onClick={() => onToggleEpic(squad, ep)}>
+                          <td className="pr-2 align-middle whitespace-nowrap cursor-pointer" title={selected ? 'Click to remove from planner' : 'Click to add to planner'} onClick={() => onToggleEpic(squad, ep)}>
                             <span className="font-mono text-[11px] text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">{ep.key}</span>
                           </td>
-                          <td className="py-1.5 pr-2 align-middle min-w-[360px]">
+                          <td className="pr-2 align-middle min-w-[140px]">
                             <input
                               key={`t-${effectiveTitle(ep)}`}
                               defaultValue={effectiveTitle(ep)}
                               onBlur={(e) => { if (e.target.value !== effectiveTitle(ep)) commitField(ep, 'title', e.target.value) }}
                               onKeyDown={blurOnEnter}
-                              className={`w-full max-w-[360px] text-[11px] ${cellInputCls} ${titleOverridden(ep) ? OVR_BG : 'text-gray-700 dark:text-gray-300'}`}
+                              className={`w-full max-w-[240px] text-[11px] ${cellInputCls} ${titleOverridden(ep) ? OVR_BG : 'text-gray-700 dark:text-gray-300'}`}
                               title={titleOverridden(ep) ? OVR_TITLE : ''}
                             />
                           </td>
-                          <td className="py-1.5 pr-[22px] text-right tabular-nums align-middle whitespace-nowrap">
+                          <td className="pr-[22px] text-right tabular-nums align-middle whitespace-nowrap">
                             <input
                               key={`i-${inScope}`}
                               defaultValue={inScope}
@@ -402,7 +350,7 @@ const PlannerScope = forwardRef<PlannerScopeHandle, Props>(function PlannerScope
                               title={itemsOverridden(ep) ? OVR_TITLE : ''}
                             />
                           </td>
-                          <td className="py-1.5 pr-2 align-middle whitespace-nowrap">
+                          <td className="pr-2 align-middle whitespace-nowrap">
                             <span className="inline-block relative">
                               <select
                                 value={effPriority}
@@ -417,33 +365,21 @@ const PlannerScope = forwardRef<PlannerScopeHandle, Props>(function PlannerScope
                               )}
                             </span>
                           </td>
-                          <td className="py-1.5 pr-2 align-middle whitespace-nowrap">
-                            {ep.custom
-                              ? <span className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-blue-50 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">custom</span>
-                              : ep.status
-                                ? <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${getTagProps('status', ep.status).cls}`}>{ep.status}</span>
-                                : null}
+                          <td className="pr-2 align-middle whitespace-nowrap">
+                            {ep.status
+                              ? <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${getTagProps('status', ep.status).cls}`}>{ep.status}</span>
+                              : null}
                           </td>
-                          <td className="py-1.5 pr-[22px] text-right text-[11px] text-gray-400 tabular-nums align-middle whitespace-nowrap">{ep.created || '—'}</td>
-                          <td className="py-1.5 pr-[22px] text-right text-[11px] text-gray-400 tabular-nums align-middle whitespace-nowrap">{ep.updated || '—'}</td>
-                          <td className="py-1.5 align-middle">
-                            <div className="inline-flex items-center gap-1.5">
-                              {ep.custom ? (
-                                <button
-                                  type="button"
-                                  className="text-gray-400 hover:text-red-600 dark:text-gray-500 dark:hover:text-red-400 p-0.5 rounded hover:bg-red-50 dark:hover:bg-red-900/30"
-                                  title={`Delete ${ep.summary}`}
-                                  onClick={(e) => { e.stopPropagation(); onRemoveCustomEpic(ep.key) }}
-                                ><X size={15} /></button>
-                              ) : jiraUrl ? (
-                                <a
-                                  href={`${jiraUrl.replace(/\/$/, '')}/browse/${ep.key}`} target="_blank" rel="noopener noreferrer"
-                                  className="text-gray-400 hover:text-blue-600 dark:text-gray-500 dark:hover:text-blue-400 p-0.5 rounded hover:bg-blue-50 dark:hover:bg-blue-900/30"
-                                  title={`Open ${ep.key} in Jira`}
-                                  onClick={(e) => e.stopPropagation()}
-                                ><ExternalLink size={14} /></a>
-                              ) : null}
-                            </div>
+                          <td className="pr-3 text-right text-[11px] text-gray-400 tabular-nums align-middle whitespace-nowrap">{shortDateStr(ep.updated)}</td>
+                          <td className="align-middle">
+                            {jiraUrl ? (
+                              <a
+                                href={`${jiraUrl.replace(/\/$/, '')}/browse/${ep.key}`} target="_blank" rel="noopener noreferrer"
+                                className="text-gray-400 hover:text-blue-600 dark:text-gray-500 dark:hover:text-blue-400 p-0.5 rounded hover:bg-blue-50 dark:hover:bg-blue-900/30"
+                                title={`Open ${ep.key} in Jira`}
+                                onClick={(e) => e.stopPropagation()}
+                              ><ExternalLink size={14} /></a>
+                            ) : null}
                           </td>
                         </tr>
                       )

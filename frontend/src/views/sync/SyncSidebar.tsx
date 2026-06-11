@@ -11,11 +11,13 @@ const VIEWS = [
 interface Props {
   view: string
   running?: boolean
+  autoSync?: boolean
   onViewChange: (view: string) => void
   onSync: (force: boolean) => void
+  onAutoSyncChange?: (v: boolean) => void
 }
 
-export default function SyncSidebar({ view, running = false, onViewChange, onSync }: Props) {
+export default function SyncSidebar({ view, running = false, autoSync = false, onViewChange, onSync, onAutoSyncChange }: Props) {
   const [force, setForce] = useState(false)
 
   return (
@@ -30,6 +32,12 @@ export default function SyncSidebar({ view, running = false, onViewChange, onSyn
           <RefreshCw size={13} className={running ? 'animate-spin' : ''} />
           {running ? 'Syncing…' : 'Sync Now'}
         </button>
+
+        <div className="flex items-center gap-2 px-1">
+          <AppCheckbox checked={autoSync} onChange={(v) => onAutoSyncChange?.(v)}>
+            <span className="text-[11px] text-gray-500 dark:text-gray-400">Auto sync (every 5 min)</span>
+          </AppCheckbox>
+        </div>
 
         <div className={`flex items-center gap-2 px-1 ${running ? 'opacity-40 pointer-events-none' : ''}`}>
           <AppCheckbox checked={force} onChange={setForce}>

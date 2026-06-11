@@ -87,10 +87,10 @@ export function terminalChangedDuringJql(months: string[]): string | null {
 
 /**
  * Returns a JQL project clause for a squad.
- * ORG → all configured projects; a specific squad → single project filter.
+ * ALL → all configured projects; a specific squad → single project filter.
  */
 export function projectClause(squad?: string): string {
-  return squad && squad !== 'ORG'
+  return squad && squad !== 'ALL'
     ? `project = ${squad}`
     : `project in (${PROJECTS.join(', ')})`
 }

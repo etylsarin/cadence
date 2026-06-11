@@ -8,7 +8,7 @@ export { PROJECTS }
 
 const KEY = 'cadence:project'
 
-export function storedProject(fallback: string = PROJECTS[0], squads: string[] = PROJECTS): string {
+export function storedProject(fallback: string = SQUADS[0], squads: string[] = SQUADS): string {
   const stored = localStorage.getItem(KEY)
   return stored && squads.includes(stored) ? stored : fallback
 }
@@ -18,7 +18,7 @@ export function saveProject(value: string): void {
 }
 
 /** State pre-initialised from localStorage, validated against `squads`. */
-export function useProject(fallback: string = PROJECTS[0], squads: string[] = PROJECTS) {
+export function useProject(fallback: string = SQUADS[0], squads: string[] = SQUADS) {
   const [project, setProjectState] = useState<string>(() => storedProject(fallback, squads))
   const set = useCallback((value: string) => {
     setProjectState(value)

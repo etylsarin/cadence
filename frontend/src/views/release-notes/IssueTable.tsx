@@ -1,18 +1,47 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
+import { ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react'
 import TagBadge from '@/components/TagBadge'
-import AppCheckbox from '@/components/AppCheckbox'
 import type { RnIssue } from './types'
 
-/** Column-toggle state persisted to localStorage (cadence:rn:col:*). */
-function useColPref(key: string, def: boolean): [boolean, (v: boolean) => void] {
-  const lsKey = `cadence:rn:col:${key}`
-  const [val, setVal] = useState<boolean>(() => {
-    const v = localStorage.getItem(lsKey)
-    return v === null ? def : v === 'true'
-  })
-  const set = (v: boolean) => { setVal(v); localStorage.setItem(lsKey, String(v)) }
-  return [val, set]
+type SortKey = 'key' | 'type' | 'priority' | 'summary' | 'status'
+type SortDir = 'asc' | 'desc'
+
+const PRIORITY_ORDER: Record<string, number> = { Highest: 0, High: 1, Medium: 2, Low: 3, Lowest: 4 }
+
+function naturalKey(key: string): [string, number] {
+  const i = key.lastIndexOf('-')
+  if (i < 0) return [key, 0]
+  const num = parseInt(key.slice(i + 1), 10)
+  return [key.slice(0, i), isNaN(num) ? 0 : num]
 }
+
+function compare(a: RnIssue, b: RnIssue, key: SortKey, dir: SortDir): number {
+  let diff = 0
+  if (key === 'key') {
+    const [ap, an] = naturalKey(a.key)
+    const [bp, bn] = naturalKey(b.key)
+    diff = ap < bp ? -1 : ap > bp ? 1 : an - bn
+  } else if (key === 'priority') {
+    const ao = PRIORITY_ORDER[a.priority ?? ''] ?? 99
+    const bo = PRIORITY_ORDER[b.priority ?? ''] ?? 99
+    diff = ao - bo
+  } else {
+    const av = (a[key] ?? '') as string
+    const bv = (b[key] ?? '') as string
+    diff = av < bv ? -1 : av > bv ? 1 : 0
+  }
+  return dir === 'asc' ? diff : -diff
+}
+
+interface ColDef { key: SortKey; label: string; className?: string }
+
+const COLUMNS: ColDef[] = [
+  { key: 'key',      label: 'Key',      className: 'whitespace-nowrap w-px' },
+  { key: 'type',     label: 'Type',     className: 'w-px' },
+  { key: 'priority', label: 'Priority', className: 'w-px' },
+  { key: 'summary',  label: 'Summary',  className: 'w-full' },
+  { key: 'status',   label: 'Status',   className: 'whitespace-nowrap w-px' },
+]
 
 interface Props {
   issues?: RnIssue[]
@@ -20,94 +49,71 @@ interface Props {
 }
 
 export default function IssueTable({ issues = [], jiraUrl = '' }: Props) {
-  const [showKey, setShowKey]           = useColPref('key', true)
-  const [showType, setShowType]         = useColPref('type', true)
-  const [showPriority, setShowPriority] = useColPref('priority', true)
-  const [showSummary, setShowSummary]   = useColPref('summary', true)
-  const [showStatus, setShowStatus]     = useColPref('status', true)
-  const [showLinks, setShowLinks]       = useColPref('links', true)
-  const [copyLabel, setCopyLabel]       = useState('Copy')
+  const [sortKey, setSortKey] = useState<SortKey>('key')
+  const [sortDir, setSortDir] = useState<SortDir>('asc')
 
-  async function copyIssues() {
-    if (!issues.length) return
-    const header: string[] = []
-    if (showKey)      header.push('Key')
-    if (showType)     header.push('Type')
-    if (showPriority) header.push('Priority')
-    if (showSummary)  header.push('Summary')
-    if (showStatus)   header.push('Status')
-
-    const rows = issues.map((i) => {
-      const cols: (string | undefined)[] = []
-      if (showKey)      cols.push(showLinks && jiraUrl ? `${jiraUrl}/browse/${i.key}` : i.key)
-      if (showType)     cols.push(i.type)
-      if (showPriority) cols.push(i.priority)
-      if (showSummary)  cols.push(i.summary)
-      if (showStatus)   cols.push(i.status)
-      return cols.join('\t')
-    })
-
-    await navigator.clipboard.writeText([header.join('\t'), ...rows].join('\n'))
-    setCopyLabel('Copied!')
-    setTimeout(() => setCopyLabel('Copy'), 2000)
+  function handleSort(key: SortKey) {
+    if (key === sortKey) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
+    } else {
+      setSortKey(key)
+      setSortDir(key === 'priority' ? 'asc' : 'asc')
+    }
   }
 
-  return (
-    <div>
-      {/* Toolbar */}
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mb-3 text-xs text-gray-500 dark:text-gray-400">
-        <span className="font-medium text-gray-400 dark:text-gray-500">Columns</span>
-        <AppCheckbox checked={showKey} onChange={setShowKey}>Key</AppCheckbox>
-        <AppCheckbox checked={showType} onChange={setShowType}>Type</AppCheckbox>
-        <AppCheckbox checked={showPriority} onChange={setShowPriority}>Priority</AppCheckbox>
-        <AppCheckbox checked={showSummary} onChange={setShowSummary}>Summary</AppCheckbox>
-        <AppCheckbox checked={showStatus} onChange={setShowStatus}>Status</AppCheckbox>
-        <AppCheckbox checked={showLinks} onChange={setShowLinks}>Links</AppCheckbox>
-        <div className="ml-auto">
-          <button
-            className="px-3 py-1 rounded border border-gray-200 dark:border-slate-700 text-gray-600 dark:text-gray-400 hover:border-gray-900 dark:hover:border-slate-400 hover:text-gray-900 dark:hover:text-gray-100 transition-colors"
-            onClick={copyIssues}
-          >{copyLabel}</button>
-        </div>
-      </div>
+  const sorted = useMemo(
+    () => [...issues].sort((a, b) => compare(a, b, sortKey, sortDir)),
+    [issues, sortKey, sortDir],
+  )
 
-      {/* Table */}
-      <div className="overflow-x-auto rounded-lg border border-gray-100 dark:border-slate-700">
-        <table className="w-full text-sm border-collapse">
-          <thead>
-            <tr className="bg-gray-50 dark:bg-slate-800 text-left text-xs text-gray-500 dark:text-gray-400 border-b border-gray-100 dark:border-slate-700">
-              {showKey      && <th className="px-3 py-2 font-medium whitespace-nowrap w-px">Key</th>}
-              {showType     && <th className="px-3 py-2 font-medium w-px">Type</th>}
-              {showPriority && <th className="px-3 py-2 font-medium w-px">Priority</th>}
-              {showSummary  && <th className="px-3 py-2 font-medium">Summary</th>}
-              {showStatus   && <th className="px-3 py-2 font-medium w-px whitespace-nowrap">Status</th>}
-              <th className="w-full" />
-            </tr>
-          </thead>
-          <tbody>
-            {!issues.length ? (
-              <tr><td colSpan={5} className="px-3 py-6 text-center text-gray-400 dark:text-gray-500 text-xs">No tickets.</td></tr>
-            ) : (
-              issues.map((issue) => (
-                <tr key={issue.key} className="border-b border-gray-50 dark:border-slate-700 last:border-0 hover:bg-gray-50 dark:hover:bg-slate-800 transition-colors">
-                  {showKey && (
-                    <td className="px-3 py-2 whitespace-nowrap">
-                      {showLinks && jiraUrl
-                        ? <a href={`${jiraUrl}/browse/${issue.key}`} target="_blank" rel="noreferrer" className="text-xs font-mono text-gray-900 dark:text-gray-100 hover:underline">{issue.key}</a>
-                        : <span className="text-xs font-mono text-gray-500 dark:text-gray-400">{issue.key}</span>}
-                    </td>
-                  )}
-                  {showType     && <td className="px-3 py-2"><TagBadge kind="type" value={issue.type} iconOnly /></td>}
-                  {showPriority && <td className="px-3 py-2"><TagBadge kind="priority" value={issue.priority} iconOnly /></td>}
-                  {showSummary  && <td className="px-3 py-2 text-xs text-gray-700 dark:text-gray-300 whitespace-nowrap">{issue.summary}</td>}
-                  {showStatus   && <td className="px-3 py-2 whitespace-nowrap"><TagBadge kind="status" value={issue.status} /></td>}
-                  <td />
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+  return (
+    <div className="overflow-x-auto rounded-lg border border-gray-100 dark:border-slate-700">
+      <table className="w-full text-sm border-collapse">
+        <thead className="sticky top-0 z-10">
+          <tr className="bg-gray-50 dark:bg-slate-800 text-left text-xs text-gray-500 dark:text-gray-400 border-b border-gray-100 dark:border-slate-700">
+            {COLUMNS.map((col) => {
+              const active = sortKey === col.key
+              return (
+                <th
+                  key={col.key}
+                  className={`px-3 py-2 font-medium select-none cursor-pointer hover:text-gray-800 dark:hover:text-gray-200 transition-colors ${col.className ?? ''}`}
+                  onClick={() => handleSort(col.key)}
+                >
+                  <span className="inline-flex items-center gap-1">
+                    {col.label}
+                    {active ? (
+                      sortDir === 'asc'
+                        ? <ChevronUp size={11} className="text-gray-700 dark:text-gray-300 shrink-0" />
+                        : <ChevronDown size={11} className="text-gray-700 dark:text-gray-300 shrink-0" />
+                    ) : (
+                      <ChevronsUpDown size={11} className="text-gray-300 dark:text-gray-600 shrink-0" />
+                    )}
+                  </span>
+                </th>
+              )
+            })}
+          </tr>
+        </thead>
+        <tbody>
+          {!sorted.length ? (
+            <tr><td colSpan={5} className="px-3 py-6 text-center text-gray-400 dark:text-gray-500 text-xs">No tickets.</td></tr>
+          ) : (
+            sorted.map((issue) => (
+              <tr key={issue.key} className="border-b border-gray-50 dark:border-slate-700 last:border-0 hover:bg-gray-50 dark:hover:bg-slate-800 transition-colors">
+                <td className="px-3 py-2 whitespace-nowrap">
+                  {jiraUrl
+                    ? <a href={`${jiraUrl}/browse/${issue.key}`} target="_blank" rel="noreferrer" className="text-xs font-mono text-gray-900 dark:text-gray-100 hover:underline">{issue.key}</a>
+                    : <span className="text-xs font-mono text-gray-500 dark:text-gray-400">{issue.key}</span>}
+                </td>
+                <td className="px-3 py-2"><TagBadge kind="type" value={issue.type} iconOnly /></td>
+                <td className="px-3 py-2"><TagBadge kind="priority" value={issue.priority} iconOnly /></td>
+                <td className="px-3 py-2 text-xs text-gray-700 dark:text-gray-300">{issue.summary}</td>
+                <td className="px-3 py-2 whitespace-nowrap"><TagBadge kind="status" value={issue.status} /></td>
+              </tr>
+            ))
+          )}
+        </tbody>
+      </table>
     </div>
   )
 }

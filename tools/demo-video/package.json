@@ -1,0 +1,8 @@
+{
+  "name": "cadence-demo-video",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "playwright": "^1.60.0"
+  }
+}

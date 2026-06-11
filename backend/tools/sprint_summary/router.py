@@ -28,8 +28,12 @@ STATUS_COMPLETED = "Approved for PROD env"
 
 def get_sprints(project: str) -> list:
     m = get_mirror()
+    if project == "ALL":
+        sprint_ids = (sid for p in PROJECTS for sid in m.sprints_by_project.get(p, []))
+    else:
+        sprint_ids = m.sprints_by_project.get(project, [])
     sprints = sorted(
-        (m.sprints[sid] for sid in m.sprints_by_project.get(project, [])),
+        (m.sprints[sid] for sid in sprint_ids if sid in m.sprints),
         key=lambda s: s["id"],
         reverse=True,
     )
@@ -40,6 +44,11 @@ def get_sprints(project: str) -> list:
             "state": s["state"],
             "startDate": s.get("startDate", ""),
             "endDate": s.get("endDate", ""),
+            "squads": sorted({
+                label
+                for t in s.get("_tickets", [])
+                for label in (t.get("fields", {}).get("labels") or [])
+            }),
         }
         for s in sprints
     ]
@@ -55,7 +64,7 @@ def _points(raw) -> float:
 def get_sprint_summary(project: str, sprint_id: str) -> dict:
     m = get_mirror()
     sprint = m.sprints.get(int(sprint_id))
-    if not sprint or sprint["_project"] != project:
+    if not sprint or (project != "ALL" and sprint["_project"] != project):
         raise ValueError(f"Sprint {sprint_id} not found for {project}")
 
     start  = sprint.get("startDate", "")
@@ -99,6 +108,7 @@ def get_sprint_summary(project: str, sprint_id: str) -> dict:
             "releaseDate": fv.get("releaseDate", ""),
             "epicKey":     ek,
             "epicName":    ((epic.get("fields") or {}).get("summary", ek) if epic else ek),
+            "labels":      f.get("labels") or [],
         })
 
     all_issues.sort(key=lambda i: i["key"])
@@ -160,13 +170,33 @@ def get_sprint_summary(project: str, sprint_id: str) -> dict:
 
 # ── Routes ─────────────────────────────────────────────────────────────────────
 
+@router.get("/api/squads")
+def api_squads(project: str = Query(DEFAULT_PROJECT)):
+    if project != "ALL":
+        validate_project(project)
+    try:
+        labels: set = set()
+        m = get_mirror()
+        projects = PROJECTS if project == "ALL" else [project]
+        for proj in projects:
+            for sid in m.sprints_by_project.get(proj, []):
+                sprint_data = m.sprints.get(sid, {})
+                for t in sprint_data.get("_tickets", []):
+                    labels.update(t.get("fields", {}).get("labels", []))
+        return {"squads": sorted(labels)}
+    except Exception:
+        log.exception("Error listing squads for %s", project)
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
 @router.get("/api/sprints")
 def api_sprints(
     project: str = Query(DEFAULT_PROJECT),
     limit:   int = Query(10),
     offset:  int = Query(0),
 ):
-    validate_project(project)
+    if project != "ALL":
+        validate_project(project)
     try:
         all_items = get_sprints(project)
         return {
@@ -184,7 +214,8 @@ def api_sprint_summary(
     project: str = Query(DEFAULT_PROJECT),
     sprint_id: str = Query(...),
 ):
-    validate_project(project)
+    if project != "ALL":
+        validate_project(project)
     validate_numeric_id(sprint_id, "sprint_id")
     try:
         return get_sprint_summary(project, sprint_id)

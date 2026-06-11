@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api } from '@/lib/api'
+import { AUTO_SYNC_KEY, AUTO_SYNC_EVENT } from '@/router'
 import SyncSidebar from './SyncSidebar'
 import SyncDashboard from './SyncDashboard'
 import SyncLogs from './SyncLogs'
@@ -9,6 +10,7 @@ export default function Sync() {
   const [view, setView] = useState('dashboard')
   const [status, setStatus] = useState<SyncStatus | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [autoSync, setAutoSync] = useState<boolean>(() => localStorage.getItem(AUTO_SYNC_KEY) === 'true')
 
   const fetchStatus = useCallback(async () => {
     try {
@@ -39,7 +41,18 @@ export default function Sync() {
 
   return (
     <div className="flex h-screen overflow-hidden bg-white dark:bg-slate-900">
-      <SyncSidebar view={view} running={status?.running ?? false} onViewChange={setView} onSync={startSync} />
+      <SyncSidebar
+        view={view}
+        running={status?.running ?? false}
+        autoSync={autoSync}
+        onViewChange={setView}
+        onSync={startSync}
+        onAutoSyncChange={(v) => {
+          setAutoSync(v)
+          localStorage.setItem(AUTO_SYNC_KEY, String(v))
+          window.dispatchEvent(new CustomEvent(AUTO_SYNC_EVENT, { detail: v }))
+        }}
+      />
 
       <div className="flex-1 overflow-y-auto">
         <div className="px-8 py-7 max-w-3xl">

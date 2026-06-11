@@ -1,6 +1,8 @@
 import type { ReactNode } from 'react'
+import { useEffect, useState } from 'react'
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { useAccessibleTools } from '@/hooks/useAccessibleTools'
+import { api } from '@/lib/api'
 
 import HomePage from '@/views/HomePage'
 import Ask from '@/views/ask/Ask'
@@ -11,6 +13,33 @@ import Planner from '@/views/planner/Planner'
 import PromptBuilder from '@/views/prompt-builder/PromptBuilder'
 import FlowMetrics from '@/views/flow-metrics/FlowMetrics'
 import Hygiene from '@/views/hygiene/Hygiene'
+
+export const AUTO_SYNC_KEY = 'cadence:sync:auto'
+export const AUTO_SYNC_EVENT = 'cadence:autosync-change'
+
+/** Stays mounted for the app lifetime — fires sync every 5 min when auto-sync is on. */
+function AutoSyncWorker() {
+  const [enabled, setEnabled] = useState(() => localStorage.getItem(AUTO_SYNC_KEY) === 'true')
+
+  useEffect(() => {
+    function onEvent(e: Event) { setEnabled((e as CustomEvent<boolean>).detail) }
+    window.addEventListener(AUTO_SYNC_EVENT, onEvent)
+    return () => window.removeEventListener(AUTO_SYNC_EVENT, onEvent)
+  }, [])
+
+  useEffect(() => {
+    if (!enabled) return
+    const id = setInterval(async () => {
+      try {
+        const status = await api<{ running: boolean }>('/sync/api/status')
+        if (!status.running) await api('/sync/api/sync', { method: 'POST' })
+      } catch { /* ignore */ }
+    }, 5 * 60 * 1000)
+    return () => clearInterval(id)
+  }, [enabled])
+
+  return null
+}
 
 /** Port of the Vue router's beforeEach guard — block disabled tools. */
 function RequireTool({ toolId, children }: { toolId: string; children: ReactNode }) {
@@ -23,6 +52,7 @@ function RequireTool({ toolId, children }: { toolId: string; children: ReactNode
 export default function AppRouter() {
   return (
     <HashRouter>
+      <AutoSyncWorker />
       <Routes>
         <Route path="/" element={<HomePage />} />
 

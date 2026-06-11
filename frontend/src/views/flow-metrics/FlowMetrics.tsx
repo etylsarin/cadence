@@ -7,7 +7,7 @@ import DrillDrawer from '@/components/DrillDrawer'
 import EmptyState from '@/components/EmptyState'
 import TagBadge from '@/components/TagBadge'
 import { api } from '@/lib/api'
-import { PROJECTS, useProject } from '@/hooks/useProject'
+import { ALL_SQUADS, useProject } from '@/hooks/useProject'
 import type { PeriodSelection } from '@/lib/jql'
 import type { AgingData, FlowData, StageStat } from './types'
 
@@ -95,7 +95,7 @@ export default function FlowMetrics() {
     <div className="flex h-screen overflow-hidden bg-white dark:bg-slate-900">
       <FlowSidebar
         squad={project}
-        squads={PROJECTS}
+        squads={ALL_SQUADS}
         types={types}
         monthsUsed={flow?.months_used.length ?? 0}
         onSquadChange={setProject}
