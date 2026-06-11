@@ -22,7 +22,7 @@ Browser ──▶ Worker (src/index.ts) ──▶ Container (Dockerfile)
 - **Jira is mocked** — the container also runs `tools.mock_jira` on `127.0.0.1:9876`; the sync pipeline fetches from it. No real Jira access.
 - **AI is mocked** — `AI_PROVIDER=mock` selects `backend/ai_mock.py` (deterministic, offline). No real AI key used.
 - **R2 is real** — `backend/data/` (synced tickets) is persisted to the `cadence-data` R2 bucket via an `s3fs` FUSE mount, so data survives container restarts.
-- **Auth is on** — cookie-session login gates all data routes (see §7).
+- **Auth is on** — cookie-session login gates all data routes (login flow in §8).
 
 > Current account: `7e2674dacce07a6bccd8e8a85694a3f2`. Image registry: `registry.cloudflare.com/<account>/cadence-cadence`.
 
@@ -33,7 +33,7 @@ Browser ──▶ Worker (src/index.ts) ──▶ Container (Dockerfile)
 | Requirement | Notes |
 |---|---|
 | **Workers Paid plan** | Containers are **not** available on the Free tier. |
-| **Docker** running locally | Wrangler builds + pushes the image during deploy (even `--dry-run` builds). |
+| **Docker** running locally | Wrangler builds + pushes the image during deploy (even `--dry-run` builds). Only needed for *manual* deploys — CI uses the GitHub runner's Docker (§5). |
 | **Node + wrangler** | wrangler is installed project-local in `cloudflare/node_modules` (v4.x). Node via nvm, e.g. `export PATH="$HOME/.nvm/versions/node/v24.16.0/bin:$PATH"`. |
 | **Cloudflare API token** | Account-owned token. Permissions: **Workers Scripts → Edit**, **Workers R2 Storage → Edit**, **Account Settings → Read**. (Account-owned tokens have no "User Details" permission — that's normal.) Stored in `../.env` as `CLOUDFLARE_API_TOKEN`. |
 | **R2 S3 API token** | Separate from the deploy token. Create in dash → R2 → API → *Manage API Tokens* → **Object Read & Write**. Yields `R2_ACCESS_KEY_ID` + `R2_SECRET_ACCESS_KEY`; the account ID is `R2_ACCOUNT_ID`. Stored in `../.env`. |
@@ -51,6 +51,7 @@ Browser ──▶ Worker (src/index.ts) ──▶ Container (Dockerfile)
 | [../Dockerfile](../Dockerfile) | Image build. Installs `fuse`/`s3fs`. `VOLUME /app/backend/data`. `ENTRYPOINT docker-entrypoint.sh`. |
 | [../docker-entrypoint.sh](../docker-entrypoint.sh) | Mounts R2 via s3fs when `R2_*` creds present; launches mock Jira when `USE_MOCK_JIRA=1`; then `exec uvicorn`. |
 | [../.dockerignore](../.dockerignore) | **Critical** — keeps `.env` (secrets), `backend/data/`, `node_modules`, and `cloudflare/` out of the image. |
+| [../.github/workflows/deploy.yml](../.github/workflows/deploy.yml) | CI: auto-deploys on push to `main` (§5). |
 | [package.json](package.json) | `npm run deploy` / `dev` / `docker:dev`. |
 
 ### Variables vs secrets
@@ -78,7 +79,7 @@ Browser ──▶ Worker (src/index.ts) ──▶ Container (Dockerfile)
 
 ---
 
-## 4. First-time deployment
+## 4. First-time deployment (manual)
 
 All commands from the `cloudflare/` directory:
 
@@ -105,12 +106,48 @@ Notes:
 - **Step 3 filters to 6 keys on purpose.** Bulk-uploading the whole `.env` would also push `JIRA_*` / `AI_PROVIDER` / `ANTHROPIC_API_KEY` as secrets, which **collide** with the same-named `[vars]` and break the deploy.
 - `secret bulk` auto-creates the `cadence` Worker if it doesn't exist yet (no chicken-and-egg with the required-secrets check).
 - First container provisioning takes **a few minutes**; the URL may briefly error until ready.
+- This step 3 (the 6 Worker secrets) is the **one-time prerequisite for automated CI deploys** too — see §5.
 
 ---
 
-## 5. Redeploy / update
+## 5. Automated deployment (GitHub Actions)
 
-After code or config changes:
+Pushes to **`main`** deploy automatically via [../.github/workflows/deploy.yml](../.github/workflows/deploy.yml).
+
+**What it does:** on every push to `main` (e.g. merging a PR) it checks out the repo, sets up Node 24, runs `npm ci` in `cloudflare/`, then `npx wrangler deploy`. The GitHub-hosted `ubuntu-latest` runner ships with Docker, so the container image builds and pushes from CI — no local Docker needed.
+
+**Required GitHub repository secrets** (Settings → Secrets and variables → Actions). Set once from the values in `../.env`:
+
+| Repo secret | Source in `../.env` | Purpose |
+|---|---|---|
+| `CLOUDFLARE_API_TOKEN` | `CLOUDFLARE_API_TOKEN` | Authenticates wrangler (same token as manual deploys). |
+| `CLOUDFLARE_ACCOUNT_ID` | `R2_ACCOUNT_ID` | Target Cloudflare account. |
+
+Set them with the GitHub CLI (run from the repo root, where `.env` lives):
+
+```bash
+grep -E '^CLOUDFLARE_API_TOKEN=' .env | cut -d= -f2- | gh secret set CLOUDFLARE_API_TOKEN --repo etylsarin/cadence
+grep -E '^R2_ACCOUNT_ID='        .env | cut -d= -f2- | gh secret set CLOUDFLARE_ACCOUNT_ID --repo etylsarin/cadence
+gh secret list --repo etylsarin/cadence          # verify both are present
+```
+
+**⚠️ CI does NOT set the 6 Worker secrets.** The workflow only provides the two repo secrets above (for *auth*). The app secrets (`CADENCE_AUTH_*`, `CADENCE_SESSION_SECRET`, `R2_*`) must already exist on the `cadence` Worker — set once via `wrangler secret bulk` (§4 step 3). They persist across deploys and `wrangler deploy` validates them, so CI passes as long as they remain. If they're ever cleared, CI deploys fail the required-secrets check until you re-run the bulk step.
+
+**Node runtime:** the workflow pins `actions/checkout@v5` and `actions/setup-node@v5`, which run on the Node 24 action runtime (clears the deprecated Node 20 warning).
+
+**Watch / re-run:**
+
+```bash
+gh run list --workflow=deploy.yml --limit 5
+gh run watch <run-id> --exit-status
+gh run rerun <run-id> --failed        # re-run after fixing a secret/transient issue
+```
+
+---
+
+## 6. Redeploy / update (manual)
+
+For ad-hoc deploys, or branches other than `main` (which auto-deploys, §5):
 
 ```bash
 cd cloudflare
@@ -121,11 +158,11 @@ npx wrangler deploy
 
 - Wrangler reuses cached image layers; unchanged builds skip the push.
 - **The image is built from the working tree** (Dockerfile `COPY . .`), *not* from git — uncommitted changes are included. Commit separately to keep git in sync with what's live.
-- Secrets/bucket persist across deploys; no need to re-run steps 2–3 unless they change.
+- Secrets/bucket persist across deploys; no need to re-run steps 2–3 of §4 unless they change.
 
 ---
 
-## 6. Post-deploy verification
+## 7. Post-deploy verification
 
 ```bash
 # App responds (use curl/browser — Cloudflare's edge blocks the python-urllib UA with 403)
@@ -150,7 +187,7 @@ rm -f "$JAR"
 
 ---
 
-## 7. First sync (populate data)
+## 8. First sync (populate data)
 
 Until the first sync, only the **Sync** tool is visible (the app gates the rest on having data).
 
@@ -162,7 +199,7 @@ Cold-start note: the container has ephemeral disk, but `backend/data/` is on the
 
 ---
 
-## 8. Observability & logs
+## 9. Observability & logs
 
 `[observability] enabled = true` in [wrangler.toml](wrangler.toml) turns on logging for **both** the Worker and the container (`wrangler deploy` applies `containers.configuration.observability.logs.enabled = true`).
 
@@ -174,7 +211,7 @@ Cold-start note: the container has ephemeral disk, but `backend/data/` is on the
 
 ---
 
-## 9. Local development & testing
+## 10. Local development & testing
 
 | Goal | Command (from `cloudflare/`) |
 |---|---|
@@ -186,7 +223,7 @@ Cold-start note: the container has ephemeral disk, but `backend/data/` is on the
 
 ---
 
-## 10. Switching mock → real
+## 11. Switching mock → real
 
 **Real Jira:**
 1. Set real `JIRA_URL` / `JIRA_EMAIL` in `[vars]`, and push `JIRA_API_TOKEN` as a **secret** (remove it from `[vars]`).
@@ -200,7 +237,7 @@ Cold-start note: the container has ephemeral disk, but `backend/data/` is on the
 
 ---
 
-## 11. Rollback
+## 12. Rollback
 
 ```bash
 npx wrangler deployments list           # find a prior version id
@@ -211,11 +248,12 @@ For container images, redeploying a previous commit rebuilds/repushes that image
 
 ---
 
-## 12. Troubleshooting
+## 13. Troubleshooting
 
 | Symptom | Cause / Fix |
 |---|---|
 | `wrangler deploy` fails: required secret missing | A `[secrets].required` key isn't set on the Worker. Run the §4 step 3 `secret bulk`. |
+| CI deploy fails: "necessary to set a CLOUDFLARE_API_TOKEN" | The GitHub repo secret `CLOUDFLARE_API_TOKEN` is unset/empty. Set the repo secrets per §5. |
 | Deploy fails parsing observability | `[[observability]]` used — must be `[observability]` (single table). |
 | Deploy error: binding name already in use | A key exists as both a `[vars]` entry and a secret. Keep it in only one (mock values → vars; real → secret). |
 | Secrets "missing" in dashboard | Looking in **Secrets Store**. Worker secrets live under the Worker → Settings → Variables and Secrets. Verify with `npx wrangler secret list`. |
@@ -227,7 +265,7 @@ For container images, redeploying a previous commit rebuilds/repushes that image
 
 ---
 
-## 13. Quick command reference
+## 14. Quick command reference
 
 ```bash
 cd cloudflare
@@ -241,4 +279,9 @@ npx wrangler secret list           # list secret names
 npx wrangler containers list       # container app state
 npx wrangler tail                  # live logs
 npx wrangler deployments list      # version history
+
+# GitHub Actions (CI deploy on push to main)
+gh run list --workflow=deploy.yml --limit 5
+gh run watch <run-id> --exit-status
+gh secret list --repo etylsarin/cadence
 ```
