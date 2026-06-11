@@ -8,6 +8,9 @@ image = "../Dockerfile"
 instance_type = "standard-2"
 max_instances = 1
 
+[observability]
+enabled = true
+
 [[durable_objects.bindings]]
 name = "CADENCE"
 class_name = "Cadence"
@@ -20,10 +23,35 @@ new_sqlite_classes = ["Cadence"]
 binding = "DATA"
 bucket_name = "cadence-data"
 
+# Non-secret config (committed). Jira and the AI provider are BOTH mocked:
+#   - Jira: the container runs tools.mock_jira on 127.0.0.1:9876, so JIRA_URL
+#     points at localhost; JIRA_EMAIL/JIRA_API_TOKEN are accepted but never
+#     verified (any syntactically valid values work).
+#   - AI: AI_PROVIDER=mock selects the offline deterministic provider
+#     (backend/ai_mock.py), so ANTHROPIC_API_KEY is unused — any value is fine.
+# Only R2 is real; its credentials are secrets (see [secrets] below).
 [vars]
-JIRA_URL = "https://sessionm.atlassian.net"
-JIRA_EMAIL = "kpazdera@sessionm.com"
+USE_MOCK_JIRA = "1"
+JIRA_URL = "http://127.0.0.1:9876"
+JIRA_EMAIL = "mock@example.com"
+JIRA_API_TOKEN = "mock-token-0000000000"
+AI_PROVIDER = "mock"
+ANTHROPIC_API_KEY = "mock-ai-key"
 R2_BUCKET_NAME = "cadence-data"
 
 [secrets]
-required = ["JIRA_API_TOKEN", "ANTHROPIC_API_KEY", "R2_ACCOUNT_ID", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY"]
+# Sensitive values — sourced from the repo .env and pushed to the Worker with
+# `wrangler secret bulk` before deploy (see deployment steps).
+#   CADENCE_AUTH_USER / CADENCE_AUTH_PASSWORD → enable the cookie-session login
+#       (both must be set, or auth stays disabled / open access).
+#   CADENCE_SESSION_SECRET → signs session cookies; keeps logins valid across
+#       container restarts (any long random string).
+#   R2_* → real R2 credentials for the s3fs data mount.
+required = [
+    "CADENCE_AUTH_USER",
+    "CADENCE_AUTH_PASSWORD",
+    "CADENCE_SESSION_SECRET",
+    "R2_ACCOUNT_ID",
+    "R2_ACCESS_KEY_ID",
+    "R2_SECRET_ACCESS_KEY",
+]

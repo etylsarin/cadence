@@ -14,4 +14,12 @@ if [ -n "$R2_ACCESS_KEY_ID" ] && [ -n "$R2_SECRET_ACCESS_KEY" ] && { [ -n "$R2_E
     echo "Mounted bucket '$BUCKET' from $ENDPOINT at /app/backend/data"
 fi
 
+# Mock Jira: run the app's own backend corpus as a stand-in Jira API on a local
+# port, so the Sync pipeline has something to fetch without real Jira access.
+# JIRA_URL is pointed at this by wrangler.toml [vars] when USE_MOCK_JIRA=1.
+if [ "$USE_MOCK_JIRA" = "1" ]; then
+    echo "Starting mock Jira on 127.0.0.1:9876"
+    python3 -m uvicorn tools.mock_jira:app --app-dir backend --host 127.0.0.1 --port 9876 &
+fi
+
 exec uvicorn server:app --app-dir backend --host 0.0.0.0 --port 8000
