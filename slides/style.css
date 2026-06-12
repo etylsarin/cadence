@@ -1,0 +1,125 @@
+/* ============================================================
+   Cadence deck — Quantum Burrito theme
+   ============================================================ */
+
+:root {
+  /* QB logo palette */
+  --qb-purple: #8b3df5;   /* "QUANTUM" violet */
+  --qb-blue:   #2e7df6;   /* electric blue     */
+  --qb-orange: #ff7a14;   /* "BURRITO" orange  */
+  --qb-pink:   #c84bf0;
+  --qb-ink:    #17141f;   /* near-black, violet-tinted */
+  --slidev-theme-primary: #8b3df5;
+}
+
+/* ---- Light QB-tinted gradient background, regardless of OS color scheme ---- */
+html,
+body,
+#app,
+.slidev-page {
+  background-color: #fbfaff !important;
+}
+
+.slidev-layout {
+  color: var(--qb-ink);
+  font-family: 'Space Grotesk', ui-sans-serif, system-ui, sans-serif;
+  /* very soft neon corners over a near-white base */
+  background-color: #fcfbff !important;
+  background-image:
+    radial-gradient(120% 90% at 8% 4%, rgba(139, 61, 245, 0.07), transparent 46%),
+    radial-gradient(110% 90% at 95% 6%, rgba(46, 125, 246, 0.06), transparent 48%),
+    radial-gradient(120% 100% at 92% 98%, rgba(255, 122, 20, 0.06), transparent 50%) !important;
+}
+
+/* ---- Fancy display font for headings ---- */
+.slidev-layout h1,
+.slidev-layout h2,
+.slidev-layout h3 {
+  font-family: 'Syne', 'Space Grotesk', sans-serif;
+  color: var(--qb-ink);
+  font-weight: 800;
+  letter-spacing: -0.015em;
+}
+
+/* Gradient ink — the QB neon sweep */
+.qb-grad {
+  background: linear-gradient(96deg, var(--qb-purple) 0%, var(--qb-blue) 48%, var(--qb-orange) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
+
+/* Small uppercase label above a headline */
+.kicker {
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  font-size: 0.8rem;
+  font-weight: 700;
+  font-family: 'Space Grotesk', sans-serif;
+  color: var(--qb-purple);
+}
+
+/* ============================================================
+   Hide Slidev nav chrome that overlaps the slides
+   ============================================================ */
+
+/* bottom-left arrows + "n / N" page-number bar */
+nav.flex.flex-col,
+/* the "g" goto panel — the numbered slide list that slides in on the right */
+.fixed.right-5.transition-all {
+  display: none !important;
+}
+
+/* ============================================================
+   Pitch (screenshot) slides — header pinned top, shot fills rest
+   so the header is never offset / clipped at any aspect ratio
+   ============================================================ */
+
+.slidev-layout.is-pitch {
+  padding: 0 !important;
+  height: 100%;
+}
+
+.pitch {
+  height: 100%;
+  box-sizing: border-box;
+  padding: 2rem 2.4rem 1.5rem;
+  display: flex;
+  flex-direction: column;
+  text-align: center;
+}
+
+.pitch .pitch-head {
+  flex: 0 0 auto;
+}
+
+.slidev-layout.is-pitch h1 {
+  font-size: 2.1rem;
+  line-height: 1.1;
+  margin: 0.15rem 0 0.2rem;
+}
+
+.pitch .cap {
+  color: #6b6677;
+  font-size: 1rem;
+  margin: 0;
+}
+
+.pitch .pitch-shot {
+  flex: 1 1 auto;
+  min-height: 0;
+  margin-top: 0.9rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.pitch .pitch-shot img {
+  max-height: 100%;
+  max-width: 100%;
+  object-fit: contain;
+  border-radius: 14px;
+  border: 1px solid #ece9f5;
+  box-shadow: 0 22px 55px -18px rgba(88, 28, 135, 0.45);
+}
